@@ -300,6 +300,10 @@ func (plugin *kubenetNetworkPlugin) Name() string {
 	return KubenetPluginName
 }
 
+func (plugin *kubenetNetworkPlugin) PluginType() string {
+	return ""
+}
+
 func (plugin *kubenetNetworkPlugin) Capabilities() utilsets.Int {
 	return utilsets.NewInt(network.NET_PLUGIN_CAPABILITY_SHAPING)
 }

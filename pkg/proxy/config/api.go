@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -28,10 +27,13 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 )
 
+var dependServices []string
+
 // NewSourceAPI creates config source that watches for changes to the services and endpoints.
-func NewSourceAPI(c cache.Getter, period time.Duration, servicesChan chan<- ServiceUpdate, endpointsChan chan<- EndpointsUpdate) {
-	servicesLW := cache.NewListWatchFromClient(c, "services", metav1.NamespaceAll, fields.Everything())
-	endpointsLW := cache.NewListWatchFromClient(c, "endpoints", metav1.NamespaceAll, fields.Everything())
+func NewSourceAPI(c cache.Getter, period time.Duration, servicesChan chan<- ServiceUpdate, endpointsChan chan<- EndpointsUpdate, namespace string, ds []string) {
+	dependServices = ds
+	servicesLW := cache.NewListWatchFromClient(c, "services", namespace, fields.Everything())
+	endpointsLW := cache.NewListWatchFromClient(c, "endpoints", namespace, fields.Everything())
 	newSourceAPI(servicesLW, endpointsLW, period, servicesChan, endpointsChan, wait.NeverStop)
 }
 
@@ -56,6 +58,33 @@ func newSourceAPI(
 	endpointsChan <- EndpointsUpdate{Op: SYNCED}
 }
 
+func inDependService(service *api.Service) bool {
+	if dependServices == nil || len(dependServices) == 0 {
+		return true
+	}
+	if name, ok := service.Labels["name"]; ok {
+		for _, serviceName := range dependServices {
+			if serviceName+"Service" == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inDependEndpoint(endpoint *api.Endpoints) bool {
+	if dependServices == nil || len(dependServices) == 0 {
+		return true
+	}
+	if name, ok := endpoint.Labels["name"]; ok {
+		for _, serviceName := range dependServices {
+			if serviceName+"Service" == name {
+				return true
+			}
+		}
+	}
+	return false
+}
 func sendAddService(servicesChan chan<- ServiceUpdate) func(obj interface{}) {
 	return func(obj interface{}) {
 		service, ok := obj.(*api.Service)
@@ -63,7 +92,10 @@ func sendAddService(servicesChan chan<- ServiceUpdate) func(obj interface{}) {
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Service: %v", obj))
 			return
 		}
-		servicesChan <- ServiceUpdate{Op: ADD, Service: service}
+		//goodrain add 仅添加依赖的应用
+		if inDependService(service) {
+			servicesChan <- ServiceUpdate{Op: ADD, Service: service}
+		}
 	}
 }
 
@@ -74,7 +106,10 @@ func sendUpdateService(servicesChan chan<- ServiceUpdate) func(oldObj, newObj in
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Service: %v", newObj))
 			return
 		}
-		servicesChan <- ServiceUpdate{Op: UPDATE, Service: service}
+		//goodrain add 仅添加依赖的应用
+		if inDependService(service) {
+			servicesChan <- ServiceUpdate{Op: UPDATE, Service: service}
+		}
 	}
 }
 
@@ -95,7 +130,10 @@ func sendDeleteService(servicesChan chan<- ServiceUpdate) func(obj interface{}) 
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Service: %v", t))
 			return
 		}
-		servicesChan <- ServiceUpdate{Op: REMOVE, Service: service}
+		//goodrain add 仅添加依赖的应用
+		if inDependService(service) {
+			servicesChan <- ServiceUpdate{Op: REMOVE, Service: service}
+		}
 	}
 }
 
@@ -106,7 +144,9 @@ func sendAddEndpoints(endpointsChan chan<- EndpointsUpdate) func(obj interface{}
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Endpoints: %v", obj))
 			return
 		}
-		endpointsChan <- EndpointsUpdate{Op: ADD, Endpoints: endpoints}
+		if inDependEndpoint(endpoints) {
+			endpointsChan <- EndpointsUpdate{Op: ADD, Endpoints: endpoints}
+		}
 	}
 }
 
@@ -117,7 +157,9 @@ func sendUpdateEndpoints(endpointsChan chan<- EndpointsUpdate) func(oldObj, newO
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Endpoints: %v", newObj))
 			return
 		}
-		endpointsChan <- EndpointsUpdate{Op: UPDATE, Endpoints: endpoints}
+		if inDependEndpoint(endpoints) {
+			endpointsChan <- EndpointsUpdate{Op: UPDATE, Endpoints: endpoints}
+		}
 	}
 }
 
@@ -138,7 +180,9 @@ func sendDeleteEndpoints(endpointsChan chan<- EndpointsUpdate) func(obj interfac
 			utilruntime.HandleError(fmt.Errorf("cannot convert to *api.Endpoints: %v", obj))
 			return
 		}
-		endpointsChan <- EndpointsUpdate{Op: REMOVE, Endpoints: endpoints}
+		if inDependEndpoint(endpoints) {
+			endpointsChan <- EndpointsUpdate{Op: REMOVE, Endpoints: endpoints}
+		}
 	}
 }
 

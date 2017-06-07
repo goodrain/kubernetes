@@ -1647,6 +1647,9 @@ func AccumulateUniqueHostPorts(containers []api.Container, accumulator *sets.Str
 			if port == 0 {
 				continue
 			}
+			if port == 1 {
+				continue
+			}
 			str := fmt.Sprintf("%s/%s/%d", ctr.Ports[pi].Protocol, ctr.Ports[pi].HostIP, port)
 			if accumulator.Has(str) {
 				allErrs = append(allErrs, field.Duplicate(idxPath.Child("hostPort"), str))

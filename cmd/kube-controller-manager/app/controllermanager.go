@@ -63,6 +63,7 @@ import (
 	"k8s.io/kubernetes/pkg/controller/volume/attachdetach"
 	persistentvolumecontroller "k8s.io/kubernetes/pkg/controller/volume/persistentvolume"
 	"k8s.io/kubernetes/pkg/features"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/pkg/serviceaccount"
 	"k8s.io/kubernetes/pkg/util/configz"
 
@@ -110,6 +111,7 @@ func ResyncPeriod(s *options.CMServer) func() time.Duration {
 
 // Run runs the CMServer.  This should never exit.
 func Run(s *options.CMServer) error {
+	region.ParseConfig(s.CustomFile)
 	if err := s.Validate(KnownControllers(), ControllersDisabledByDefault.List()); err != nil {
 		return err
 	}

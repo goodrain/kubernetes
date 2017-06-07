@@ -26,6 +26,7 @@ import (
 	utilflag "k8s.io/apiserver/pkg/util/flag"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/region"
 	// Need to make sure the componentconfig api is installed so defaulting funcs work
 	_ "k8s.io/kubernetes/pkg/apis/componentconfig/install"
 	"k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
@@ -272,4 +273,6 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.ExperimentalNodeAllocatableIgnoreEvictionThreshold, "experimental-allocatable-ignore-eviction", s.ExperimentalNodeAllocatableIgnoreEvictionThreshold, "When set to 'true', Hard Eviction Thresholds will be ignored while calculating Node Allocatable. See https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md for more details. [default=false]")
 
 	fs.Var(&s.ExperimentalQOSReserved, "experimental-qos-reserved", "A set of ResourceName=Percentage (e.g. memory=50%) pairs that describe how pod resource requests are reserved at the QoS level. Currently only memory is supported. [default=none]")
+	fs.StringVar(&s.CustomFile, "custom-config", region.CustomFile, "Custom config file")
+	fs.StringVar(&s.AdaptorImageName, "adaptor-image-name", "goodrain.me/adaptor", "adaptor container image name")
 }

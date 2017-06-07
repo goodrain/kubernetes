@@ -389,6 +389,8 @@ func BuildMasterConfig(s *options.ServerRunOptions) (*master.Config, informers.S
 		return nil, nil, err
 	}
 	config := &master.Config{
+		LicenseFile:   s.LicenseFile,
+		LicenseType:   s.LicenseType,
 		GenericConfig: genericConfig,
 
 		ClientCARegistrationHook: master.ClientCARegistrationHook{

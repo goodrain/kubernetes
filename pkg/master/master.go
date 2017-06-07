@@ -17,11 +17,21 @@ limitations under the License.
 package master
 
 import (
+	"bufio"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +42,7 @@ import (
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/v1"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 	appsv1beta1 "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	authenticationv1 "k8s.io/kubernetes/pkg/apis/authentication/v1"
@@ -128,6 +139,9 @@ type Config struct {
 	// Number of masters running; all masters must be started with the
 	// same value for this field. (Numbers > 1 currently untested.)
 	MasterCount int
+	// License config
+	LicenseFile string
+	LicenseType string
 }
 
 // EndpointReconcilerConfig holds the endpoint reconciler and endpoint reconciliation interval to be
@@ -142,6 +156,7 @@ type Master struct {
 	GenericAPIServer *genericapiserver.GenericAPIServer
 
 	ClientCARegistrationHook ClientCARegistrationHook
+	NodeClient               corev1client.NodeInterface
 }
 
 type completedConfig struct {
@@ -221,9 +236,11 @@ func (c completedConfig) New() (*Master, error) {
 	if c.EnableLogsSupport {
 		routes.Logs{}.Install(s.HandlerContainer)
 	}
+	nodeCli := corev1client.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig).Nodes()
 
 	m := &Master{
 		GenericAPIServer: s,
+		NodeClient:       nodeCli,
 	}
 
 	// install legacy rest storage
@@ -261,7 +278,7 @@ func (c completedConfig) New() (*Master, error) {
 	m.InstallAPIs(c.Config.APIResourceConfigSource, c.Config.GenericConfig.RESTOptionsGetter, restStorageProviders...)
 
 	if c.Tunneler != nil {
-		m.installTunneler(c.Tunneler, corev1client.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig).Nodes())
+		m.installTunneler(c.Tunneler, nodeCli)
 	}
 
 	if err := m.GenericAPIServer.AddPostStartHook("ca-registration", c.ClientCARegistrationHook.PostStartHook); err != nil {
@@ -297,6 +314,180 @@ func (m *Master) installTunneler(nodeTunneler tunneler.Tunneler, nodeClient core
 		Name: "apiserver_proxy_tunnel_sync_latency_secs",
 		Help: "The time since the last successful synchronization of the SSH tunnels for proxy requests.",
 	}, func() float64 { return float64(nodeTunneler.SecondsSinceSync()) })
+}
+
+//以下为监测license代码段：
+
+func isReadyNodeInfo(node *v1.Node) bool {
+	for ix := range node.Status.Conditions {
+		condition := &node.Status.Conditions[ix]
+		if condition.Reason == "KubeletReady" {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Master) checkLicense(licenseFile, licenseType string) bool {
+	tag, licenseMap := m.loadLicense(licenseFile, licenseType)
+	if tag {
+		if len(licenseMap) > 0 {
+			nodeInfoMap, err := m.getAllNodeInfo()
+			if err != nil {
+				return false
+			}
+			endTime := licenseMap["end_time"]
+			endStamp, err := time.Parse("2006-01-02 15:04:05", endTime)
+			if err != nil {
+				glog.Error("license time info error.", err.Error())
+				for nodeName := range nodeInfoMap {
+					m.excitNode(nodeName)
+				}
+				return false
+			}
+			allowNum, err := strconv.Atoi(licenseMap["allow_node"])
+			if err != nil {
+				glog.Error("Will down all node,license allow node info error.", err.Error())
+				for nodeName := range nodeInfoMap {
+					m.excitNode(nodeName)
+				}
+				return false
+			}
+			allowCPU, err := strconv.Atoi(licenseMap["allow_cpu"])
+			if err != nil {
+				glog.Error("Will down all node,license allow cpu info error.", err.Error())
+				for nodeName := range nodeInfoMap {
+					m.excitNode(nodeName)
+				}
+				return false
+			}
+			allowCPU = allowCPU * 1000
+			allowMemory, err := strconv.Atoi(licenseMap["allow_memory"])
+			if err != nil {
+				glog.Error("Will down all node,license allow memory info error.", err.Error())
+				for nodeName := range nodeInfoMap {
+					m.excitNode(nodeName)
+				}
+				return false
+			}
+			allowMemory = allowMemory * 1024 * 1024 * 1024
+			var nodeNum int
+			var nodeCPU int
+			var nodeMemory int
+			for nodeName, info := range nodeInfoMap {
+				nodeNum = nodeNum + 1
+				cpu, _ := strconv.Atoi(info["cpu"])
+				nodeCPU = nodeCPU + cpu
+
+				memory, _ := strconv.Atoi(info["memory"])
+				nodeMemory = nodeMemory + memory
+				if allowNum > 0 && allowNum < nodeNum {
+					glog.Errorf("node num extend allow node num")
+					m.excitNode(nodeName)
+				}
+				if allowCPU > 0 && allowCPU < nodeCPU {
+					glog.Errorf("node cpu extend allow node cpu")
+					m.excitNode(nodeName)
+				}
+				if allowMemory > 0 && allowMemory < nodeMemory {
+					glog.Errorf("node memory extend allow node memory")
+					m.excitNode(nodeName)
+				}
+
+				if endStamp.Unix() < time.Now().Unix() {
+					glog.Errorf("auth last time extended")
+					m.excitNode(nodeName)
+				}
+			}
+		}
+	} else {
+		glog.Errorf("load license error.....")
+		os.Exit(-1)
+	}
+	return true
+}
+
+func (m *Master) getAllNodeInfo() (map[string]map[string]string, error) {
+	nodes, err := m.NodeClient.List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	nodeMap := make(map[string]map[string]string)
+	for ix := range nodes.Items {
+		node := &nodes.Items[ix]
+		if isReadyNodeInfo(node) {
+			infoMap := make(map[string]string)
+			cpu := node.Status.Capacity.Cpu().MilliValue()
+			memory := node.Status.Capacity.Memory().Value()
+			infoMap["cpu"] = strconv.FormatInt(cpu, 10)
+			infoMap["memory"] = strconv.FormatInt(memory, 10)
+			nodeMap[node.Name] = infoMap
+			//glog.Errorf("node name: '%s',cpu: '%s',memory: '%s'", node.Name, cpu, memory)
+		}
+	}
+	return nodeMap, nil
+}
+
+func (m *Master) excitNode(nodeName string) error {
+	err := m.NodeClient.Delete(nodeName, *metav1.DeleteOptions{})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *Master) loadLicense(licenseFile, licenseType string) (bool, map[string]string) {
+	var result = make(map[string]string)
+	if licenseType == "offline" {
+		arr := m.readLicense(licenseFile)
+		if len(arr) == 2 {
+			key := "qa123zxswe3532crfvtg123bnhymjukil35435opplmnbv586cxz"
+			depyc := m.decodeLicense(arr[0], key)
+			dataTemp, _ := base64.StdEncoding.DecodeString(depyc)
+			origData, _ := m.rsaDecrypt(dataTemp, string(arr[1]), key)
+			json.Unmarshal(origData, &result)
+			return true, result
+		}
+		glog.Errorf("license format is error !")
+		return false, result
+	}
+	return false, result
+}
+
+func (m *Master) readLicense(fileName string) []string {
+	arr := make([]string, 0)
+	inFile, _ := os.Open(fileName)
+	defer inFile.Close()
+	scanner := bufio.NewScanner(inFile)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		arr = append(arr, scanner.Text())
+	}
+	return arr
+}
+
+func (m *Master) decodeLicense(orig, key string) string {
+	dataTemp, _ := base64.StdEncoding.DecodeString(orig)
+	keylength := len(key)
+	arr := make([]string, 0)
+	for i, num := range dataTemp {
+		v := (int(num) - int(uint8([]rune(string(key[i%keylength]))[0]))) % 256
+		arr = append(arr, string(v))
+	}
+	return strings.Join(arr, "")
+}
+
+func (m *Master) rsaDecrypt(ciphertext []byte, decrypted, key string) ([]byte, error) {
+	privateKey := m.decodeLicense(decrypted, key)
+	block, _ := pem.Decode([]byte(privateKey))
+	if block == nil {
+		return nil, errors.New("private key error!")
+	}
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return rsa.DecryptPKCS1v15(rand.Reader, priv, ciphertext)
 }
 
 // RESTStorageProvider is a factory type for REST storage.

@@ -19,13 +19,14 @@ limitations under the License.
 package app
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,16 +46,12 @@ import (
 	proxyconfig "k8s.io/kubernetes/pkg/proxy/config"
 	"k8s.io/kubernetes/pkg/proxy/iptables"
 	"k8s.io/kubernetes/pkg/proxy/userspace"
-	"k8s.io/kubernetes/pkg/proxy/winuserspace"
 	"k8s.io/kubernetes/pkg/util/configz"
-	utildbus "k8s.io/kubernetes/pkg/util/dbus"
 	"k8s.io/kubernetes/pkg/util/exec"
 	utiliptables "k8s.io/kubernetes/pkg/util/iptables"
-	utilnetsh "k8s.io/kubernetes/pkg/util/netsh"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/util/oom"
 	"k8s.io/kubernetes/pkg/util/resourcecontainer"
-	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -91,7 +88,6 @@ func NewProxyServer(
 	client clientset.Interface,
 	eventClient v1core.EventsGetter,
 	config *options.ProxyServerConfig,
-	iptInterface utiliptables.Interface,
 	proxier proxy.ProxyProvider,
 	broadcaster record.EventBroadcaster,
 	recorder record.EventRecorder,
@@ -99,15 +95,14 @@ func NewProxyServer(
 	proxyMode string,
 ) (*ProxyServer, error) {
 	return &ProxyServer{
-		Client:       client,
-		EventClient:  eventClient,
-		Config:       config,
-		IptInterface: iptInterface,
-		Proxier:      proxier,
-		Broadcaster:  broadcaster,
-		Recorder:     recorder,
-		Conntracker:  conntracker,
-		ProxyMode:    proxyMode,
+		Client:      client,
+		EventClient: eventClient,
+		Config:      config,
+		Proxier:     proxier,
+		Broadcaster: broadcaster,
+		Recorder:    recorder,
+		Conntracker: conntracker,
+		ProxyMode:   proxyMode,
 	}, nil
 }
 
@@ -133,38 +128,15 @@ with the apiserver API to configure the proxy.`,
 
 // NewProxyServerDefault creates a new ProxyServer object with default parameters.
 func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, error) {
+
 	if c, err := configz.New("componentconfig"); err == nil {
 		c.Set(config.KubeProxyConfiguration)
 	} else {
 		glog.Errorf("unable to register configz: %s", err)
 	}
-	protocol := utiliptables.ProtocolIpv4
-	if net.ParseIP(config.BindAddress).To4() == nil {
-		protocol = utiliptables.ProtocolIpv6
-	}
-
-	var netshInterface utilnetsh.Interface
-	var iptInterface utiliptables.Interface
-	var dbus utildbus.Interface
 
 	// Create a iptables utils.
 	execer := exec.New()
-
-	if runtime.GOOS == "windows" {
-		netshInterface = utilnetsh.New(execer)
-	} else {
-		dbus = utildbus.New()
-		iptInterface = utiliptables.New(execer, dbus, protocol)
-	}
-
-	// We omit creation of pretty much everything if we run in cleanup mode
-	if config.CleanupAndExit {
-		return &ProxyServer{
-			Config:       config,
-			IptInterface: iptInterface,
-		}, nil
-	}
-
 	// TODO(vmarmol): Use container config for this.
 	var oomAdjuster *oom.OOMAdjuster
 	if config.OOMScoreAdj != nil {
@@ -214,92 +186,32 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 
 	// Create event recorder
 	hostname := nodeutil.GetHostname(config.HostnameOverride)
-	eventBroadcaster := record.NewBroadcaster()
-	recorder := eventBroadcaster.NewRecorder(api.Scheme, clientv1.EventSource{Component: "kube-proxy", Host: hostname})
 
 	var proxier proxy.ProxyProvider
 	var endpointsHandler proxyconfig.EndpointsConfigHandler
 
-	proxyMode := getProxyMode(string(config.Mode), client.Core().Nodes(), hostname, iptInterface, iptables.LinuxKernelCompatTester{})
-	if proxyMode == proxyModeIPTables {
-		glog.V(0).Info("Using iptables Proxier.")
-		if config.IPTablesMasqueradeBit == nil {
-			// IPTablesMasqueradeBit must be specified or defaulted.
-			return nil, fmt.Errorf("Unable to read IPTablesMasqueradeBit from config")
-		}
-		proxierIPTables, err := iptables.NewProxier(
-			iptInterface,
-			utilsysctl.New(),
-			execer,
-			config.IPTablesSyncPeriod.Duration,
-			config.IPTablesMinSyncPeriod.Duration,
-			config.MasqueradeAll,
-			int(*config.IPTablesMasqueradeBit),
-			config.ClusterCIDR,
-			hostname,
-			getNodeIP(client, hostname),
-			recorder,
-		)
-		if err != nil {
-			glog.Fatalf("Unable to create proxier: %v", err)
-		}
-		proxier = proxierIPTables
-		endpointsHandler = proxierIPTables
-		// No turning back. Remove artifacts that might still exist from the userspace Proxier.
-		glog.V(0).Info("Tearing down userspace rules.")
-		userspace.CleanupLeftovers(iptInterface)
-	} else {
-		glog.V(0).Info("Using userspace Proxier.")
+	glog.V(0).Info("Using userspace Proxier.")
 
-		var proxierUserspace proxy.ProxyProvider
-
-		if runtime.GOOS == "windows" {
-			// This is a proxy.LoadBalancer which NewProxier needs but has methods we don't need for
-			// our config.EndpointsConfigHandler.
-			loadBalancer := winuserspace.NewLoadBalancerRR()
-			// set EndpointsConfigHandler to our loadBalancer
-			endpointsHandler = loadBalancer
-			proxierUserspace, err = winuserspace.NewProxier(
-				loadBalancer,
-				net.ParseIP(config.BindAddress),
-				netshInterface,
-				*utilnet.ParsePortRangeOrDie(config.PortRange),
-				// TODO @pires replace below with default values, if applicable
-				config.IPTablesSyncPeriod.Duration,
-				config.UDPIdleTimeout.Duration,
-			)
-		} else {
-			// This is a proxy.LoadBalancer which NewProxier needs but has methods we don't need for
-			// our config.EndpointsConfigHandler.
-			loadBalancer := userspace.NewLoadBalancerRR()
-			// set EndpointsConfigHandler to our loadBalancer
-			endpointsHandler = loadBalancer
-			proxierUserspace, err = userspace.NewProxier(
-				loadBalancer,
-				net.ParseIP(config.BindAddress),
-				iptInterface,
-				execer,
-				*utilnet.ParsePortRangeOrDie(config.PortRange),
-				config.IPTablesSyncPeriod.Duration,
-				config.IPTablesMinSyncPeriod.Duration,
-				config.UDPIdleTimeout.Duration,
-			)
-		}
-		if err != nil {
-			glog.Fatalf("Unable to create proxier: %v", err)
-		}
-		proxier = proxierUserspace
-		// Remove artifacts from the pure-iptables Proxier, if not on Windows.
-		if runtime.GOOS != "windows" {
-			glog.V(0).Info("Tearing down pure-iptables proxy rules.")
-			iptables.CleanupLeftovers(iptInterface)
-		}
+	var proxierUserspace proxy.ProxyProvider
+	// This is a proxy.LoadBalancer which NewProxier needs but has methods we don't need for
+	// our config.EndpointsConfigHandler.
+	loadBalancer := userspace.NewLoadBalancerRR()
+	// set EndpointsConfigHandler to our loadBalancer
+	endpointsHandler = loadBalancer
+	proxierUserspace, err = userspace.NewProxier(
+		loadBalancer,
+		net.ParseIP(config.BindAddress),
+		execer,
+		*utilnet.ParsePortRangeOrDie(config.PortRange),
+		config.IPTablesSyncPeriod.Duration,
+		config.IPTablesMinSyncPeriod.Duration,
+		config.UDPIdleTimeout.Duration,
+	)
+	// }
+	if err != nil {
+		glog.Fatalf("Unable to create proxier: %v", err)
 	}
-
-	// Add iptables reload function, if not on Windows.
-	if runtime.GOOS != "windows" {
-		iptInterface.AddReloadFunc(proxier.Sync)
-	}
+	proxier = proxierUserspace
 
 	// Create configs (i.e. Watches for Services and Endpoints)
 	// Note: RegisterHandler() calls need to happen before creation of Sources because sources
@@ -311,39 +223,44 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 	endpointsConfig := proxyconfig.NewEndpointsConfig()
 	endpointsConfig.RegisterHandler(endpointsHandler)
 
+	depend := config.DependServices
+	if depend == "" {
+		depend = os.Getenv("DEPEND_SERVICE")
+	}
+	depends := strings.Split(depend, ",")
+	for i := 0; i < len(depends); i++ {
+		depends[i] = strings.Split(depends[i], ":")[0]
+	}
 	proxyconfig.NewSourceAPI(
 		client.Core().RESTClient(),
 		config.ConfigSyncPeriod,
-		serviceConfig.Channel("api"),
-		endpointsConfig.Channel("api"),
+		serviceConfig.Channel(config.Namespace),
+		endpointsConfig.Channel(config.Namespace),
+		config.Namespace,
+		depends,
 	)
 
 	config.NodeRef = &clientv1.ObjectReference{
 		Kind:      "Node",
 		Name:      hostname,
 		UID:       types.UID(hostname),
-		Namespace: "",
+		Namespace: config.Namespace,
 	}
 
-	conntracker := realConntracker{}
-
-	return NewProxyServer(client, eventClient, config, iptInterface, proxier, eventBroadcaster, recorder, conntracker, proxyMode)
+	proxyMode := proxyModeUserspace
+	return NewProxyServer(client, eventClient, config, proxier, nil, nil, nil, proxyMode)
 }
 
 // Run runs the specified ProxyServer.  This should never exit (unless CleanupAndExit is set).
 func (s *ProxyServer) Run() error {
-	// remove iptables rules and exit
-	if s.Config.CleanupAndExit {
-		encounteredError := userspace.CleanupLeftovers(s.IptInterface)
-		encounteredError = iptables.CleanupLeftovers(s.IptInterface) || encounteredError
-		if encounteredError {
-			return errors.New("Encountered an error while tearing down rules.")
-		}
+
+	if s.Broadcaster != nil {
+		s.Broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: s.EventClient.Events("")})
+	}
+	if s.Config.Namespace == "" {
+		glog.Fatalf("failed to create proxy, NameSpace is null")
 		return nil
 	}
-
-	s.Broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: s.EventClient.Events("")})
-
 	// Start up a webserver if requested
 	if s.Config.HealthzPort > 0 {
 		http.HandleFunc("/proxyMode", func(w http.ResponseWriter, r *http.Request) {
@@ -459,7 +376,9 @@ func tryIPTablesProxy(iptver iptables.IPTablesVersioner, kcompat iptables.Kernel
 }
 
 func (s *ProxyServer) birthCry() {
-	s.Recorder.Eventf(s.Config.NodeRef, api.EventTypeNormal, "Starting", "Starting kube-proxy.")
+	if s.Recorder != nil {
+		s.Recorder.Eventf(s.Config.NodeRef, api.EventTypeNormal, "Starting", "Starting kube-proxy.")
+	}
 }
 
 func getNodeIP(client clientset.Interface, hostname string) net.IP {

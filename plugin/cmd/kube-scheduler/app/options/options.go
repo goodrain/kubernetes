@@ -23,6 +23,7 @@ import (
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	"k8s.io/kubernetes/pkg/apis/componentconfig/v1alpha1"
 	"k8s.io/kubernetes/pkg/client/leaderelection"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/factory"
 
 	// add the kubernetes feature gates
@@ -43,6 +44,7 @@ type SchedulerServer struct {
 	// location information.
 	Kubeconfig string
 	// Dynamic conifguration for scheduler features.
+	CustomFile string
 }
 
 // NewSchedulerServer creates a new SchedulerServer with default parameters
@@ -77,6 +79,8 @@ func (s *SchedulerServer) AddFlags(fs *pflag.FlagSet) {
 			"to every RequiredDuringScheduling affinity rule. --hard-pod-affinity-symmetric-weight represents the weight of implicit PreferredDuringScheduling affinity rule.")
 	fs.StringVar(&s.FailureDomains, "failure-domains", api.DefaultFailureDomains, "Indicate the \"all topologies\" set for an empty topologyKey when it's used for PreferredDuringScheduling pod anti-affinity.")
 	fs.MarkDeprecated("failure-domains", "Doesn't have any effect. Will be removed in future version.")
+	fs.StringVar(&s.CustomFile, "custom-config", region.CustomFile, "Custom config file")
+
 	leaderelection.BindFlags(&s.LeaderElection, fs)
 
 	utilfeature.DefaultFeatureGate.AddFlag(fs)

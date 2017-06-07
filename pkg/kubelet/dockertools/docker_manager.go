@@ -66,6 +66,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/pkg/security/apparmor"
 	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/util/oom"
@@ -196,6 +197,9 @@ type DockerManager struct {
 
 	// Directory to host local seccomp profiles.
 	seccompProfileRoot string
+
+	//adaptor container name
+	AdaptorImageName string
 }
 
 // A subset of the pod.Manager interface extracted for testing purposes.
@@ -445,6 +449,15 @@ func (dm *DockerManager) inspectContainer(id string, podName, podNamespace strin
 				status.State = kubecontainer.ContainerStateUnknown
 				status.Message = fmt.Sprintf("Network error: %#v", err)
 			}
+			if strings.HasPrefix(ip, "172.30") { //兼容旧版midonet容器，ip在eth1上。
+				netip := region.FetchContainerIP(id, 0)
+				if netip == "" {
+					netip = region.FetchContainerIP(id, 0)
+				}
+				if netip != "" {
+					ip = netip
+				}
+			}
 		}
 		return &status, ip, nil
 	}
@@ -570,11 +583,33 @@ func makeMountBindings(mounts []kubecontainer.Mount) (result []string) {
 	return
 }
 
-func makePortsAndBindings(portMappings []kubecontainer.PortMapping) (map[dockernat.Port]struct{}, map[dockernat.Port][]dockernat.PortBinding) {
+func makePortsAndBindings(portMappings []kubecontainer.PortMapping, podName string) (map[dockernat.Port]struct{}, map[dockernat.Port][]dockernat.PortBinding, string) {
 	exposedPorts := map[dockernat.Port]struct{}{}
 	portBindings := map[dockernat.Port][]dockernat.PortBinding{}
+	var bindingPort string
 	for _, port := range portMappings {
 		exteriorPort := port.HostPort
+		glog.Infof("port.HostPort=========: %v", port.HostPort)
+		if port.HostPort > 0 {
+			hostID := region.ReadMidomanUUID()
+			portNumber := region.GetDockerPort(hostID, strconv.Itoa(port.ContainerPort), podName)
+			if portNumber == "" {
+				glog.Errorf(" %q not apply host port", hostID)
+				portNumber = region.GetDockerPort(hostID, strconv.Itoa(port.ContainerPort), podName)
+			}
+			if portNumber != "" {
+				var err error
+				exteriorPort, err = strconv.Atoi(portNumber)
+				if err != nil {
+					exteriorPort = 0
+				}
+				if bindingPort != "" {
+					bindingPort = bindingPort + "-"
+				}
+				bindingPort = bindingPort + portNumber
+			}
+		}
+		glog.Infof("exteriorPort=========: %v", exteriorPort)
 		if exteriorPort == 0 {
 			// No need to do port binding when HostPort is not specified
 			continue
@@ -612,7 +647,7 @@ func makePortsAndBindings(portMappings []kubecontainer.PortMapping) (map[dockern
 			}
 		}
 	}
-	return exposedPorts, portBindings
+	return exposedPorts, portBindings, bindingPort
 }
 
 func (dm *DockerManager) runContainer(
@@ -742,6 +777,10 @@ func (dm *DockerManager) runContainer(
 			Devices:    devices,
 		},
 		SecurityOpt: fmtSecurityOpts,
+		// goodrain k8s 默认使用zmqlog
+		LogConfig: dockercontainer.LogConfig{
+			Type: "zmqlog",
+		},
 	}
 
 	updateHostConfig(hc, opts)
@@ -810,10 +849,10 @@ func (dm *DockerManager) runContainer(
 		},
 		HostConfig: hc,
 	}
-
+	var exteriorPort string
 	// Set network configuration for infra-container
 	if container.Name == PodInfraContainerName {
-		setInfraContainerNetworkConfig(pod, netMode, opts, &dockerOpts)
+		exteriorPort = setInfraContainerNetworkConfig(pod, netMode, opts, &dockerOpts)
 	}
 
 	setEntrypointAndCommand(container, opts, dockerOpts)
@@ -854,6 +893,19 @@ func (dm *DockerManager) runContainer(
 	}
 	dm.recorder.Eventf(ref, v1.EventTypeNormal, events.StartedContainer, "Started container with docker id %v", utilstrings.ShortenString(createResp.ID, 12))
 
+	if exteriorPort != "" {
+		replicaID := strings.Split(pod.Name, "-")[0]
+		hostID := region.ReadMidomanUUID()
+		var version = ""
+		if v, ok := pod.Labels["version"]; ok {
+			version = v
+		}
+		applyResult := region.PostContainerIDNew(hostID, exteriorPort, createResp.ID, replicaID, version, pod.Name)
+		if applyResult == "" {
+			glog.Errorf(" %q not report container port", replicaID)
+			region.PostContainerIDNew(hostID, exteriorPort, createResp.ID, replicaID, version, pod.Name)
+		}
+	}
 	return kubecontainer.DockerID(createResp.ID).ContainerID(), nil
 }
 
@@ -861,14 +913,15 @@ func (dm *DockerManager) runContainer(
 // the user containers will share the same network namespace with infra-container.
 // NOTE: cluster dns settings aren't passed anymore to docker api in all cases, not only for pods with host network:
 // the resolver conf will be overwritten after infra-container creation to override docker's behaviour
-func setInfraContainerNetworkConfig(pod *v1.Pod, netMode string, opts *kubecontainer.RunContainerOptions, dockerOpts *dockertypes.ContainerCreateConfig) {
-	exposedPorts, portBindings := makePortsAndBindings(opts.PortMappings)
+func setInfraContainerNetworkConfig(pod *v1.Pod, netMode string, opts *kubecontainer.RunContainerOptions, dockerOpts *dockertypes.ContainerCreateConfig) string {
+	exposedPorts, portBindings, exteriorPort := makePortsAndBindings(opts.PortMappings, pod.Name)
 	dockerOpts.Config.ExposedPorts = exposedPorts
 	dockerOpts.HostConfig.PortBindings = dockernat.PortMap(portBindings)
 
 	if netMode != namespaceModeHost {
 		dockerOpts.Config.Hostname = opts.Hostname
 	}
+	return exteriorPort
 }
 
 func setEntrypointAndCommand(container *v1.Container, opts *kubecontainer.RunContainerOptions, dockerOpts dockertypes.ContainerCreateConfig) {
@@ -1090,7 +1143,7 @@ func getDockerNetworkMode(container *dockertypes.ContainerJSON) string {
 }
 
 func (dm *DockerManager) pluginDisablesDockerNetworking() bool {
-	return dm.network.PluginName() == "cni" || dm.network.PluginName() == "kubenet"
+	return (dm.network.PluginName() == "cni" && dm.network.PluginType() != "midonet-cni") || dm.network.PluginName() == "kubenet"
 }
 
 // newDockerVersion returns a semantically versioned docker version value
@@ -1760,7 +1813,14 @@ func (dm *DockerManager) runContainerInPod(pod *v1.Pod, container *v1.Container,
 	if err != nil {
 		return kubecontainer.ContainerID{}, fmt.Errorf("GenerateRunContainerOptions: %v", err)
 	}
-
+	var netModPid int
+	nets := strings.Split(netMode, ":")
+	if len(nets) == 2 {
+		container, err := dm.client.InspectContainer(nets[1])
+		if err == nil {
+			netModPid = container.State.Pid
+		}
+	}
 	utsMode := ""
 	if kubecontainer.IsHostNetworkPod(pod) {
 		utsMode = namespaceModeHost
@@ -1839,6 +1899,15 @@ func (dm *DockerManager) runContainerInPod(pod *v1.Pod, container *v1.Container,
 		}
 	}
 
+	// notify service start running 业务容器启动时
+	if container.Name != PodInfraContainerName && container.Image != dm.AdaptorImageName {
+		glog.Infof("start to notify service: v%", pod.Name)
+		pod.Status.PodIP = podIP
+		err := region.NotifyService(pod, netModPid)
+		if err != nil {
+			region.EventLog(pod, "应用启动后通知失败，负载均衡不会写入。失败原因："+err.Error(), "error")
+		}
+	}
 	return id, err
 }
 
@@ -2297,6 +2366,8 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 					killContainerResult.Fail(kubecontainer.ErrKillContainer, delErr.Error())
 					glog.Warningf("Clear infra container failed for pod %q: %v", format.Pod(pod), delErr)
 				}
+				//网络设置失败，通知关闭应用
+				region.StopServicePodByReplicaID(pod.Name, region.GetEventID(pod))
 				return
 			}
 
@@ -2390,6 +2461,57 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 		return
 	}
 
+	// 根据init container的形式先启动 net container
+	nextA, statusA, doneA := findActiveAdapterContainer(pod, podStatus, dm.AdaptorImageName)
+	if statusA != nil {
+		// 只要容器退出了即出错了。
+		initContainerResult := kubecontainer.NewSyncResult(kubecontainer.InitContainer, statusA.Name)
+		initContainerResult.Fail(kubecontainer.ErrRunInitContainer, fmt.Sprintf("adapter container %q exited with %d", statusA.Name, statusA.ExitCode))
+		result.AddSyncResult(initContainerResult)
+		if pod.Spec.RestartPolicy == v1.RestartPolicyNever {
+			utilruntime.HandleError(fmt.Errorf("error running pod %q adapter container %q, restart=Never: %+v", format.Pod(pod), statusA.Name, statusA))
+			return
+		}
+		utilruntime.HandleError(fmt.Errorf("Error running pod %q adapter container %q, restarting: %+v", format.Pod(pod), statusA.Name, statusA))
+	}
+	if nextA != nil {
+		if len(containerChanges.ContainersToStart) == 0 {
+			glog.V(4).Infof("No containers to start, stopping at adapter container %+v in pod %v", next.Name, format.Pod(pod))
+			return
+		}
+
+		// If we need to start the next container, do so now then exit
+		container := nextA
+		startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
+		result.AddSyncResult(startContainerResult)
+
+		// containerChanges.StartInfraContainer causes the containers to be restarted for config reasons
+		if !containerChanges.StartInfraContainer {
+			isInBackOff, err, msg := dm.doBackOff(pod, container, podStatus, backOff)
+			if isInBackOff {
+				startContainerResult.Fail(err, msg)
+				glog.V(4).Infof("Backing Off restarting init container %+v in pod %v", container, format.Pod(pod))
+				return
+			}
+		}
+		//启动adapter container
+		glog.V(4).Infof("Creating adapter container %+v in pod %v", container, format.Pod(pod))
+		if err, msg := dm.tryContainerStart(container, pod, podStatus, pullSecrets, namespaceMode, pidMode, podIP); err != nil {
+			startContainerResult.Fail(err, msg)
+			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
+			return
+		}
+
+		// Successfully started the container; clear the entry in the failure
+		glog.V(4).Infof("Completed adapter container %q for pod %q", container.Name, format.Pod(pod))
+		return
+	}
+	//adapter 容器已经启动
+	if !doneA {
+		glog.V(4).Infof("Adapter container is not running in pod %v", format.Pod(pod))
+		return
+	}
+
 	// Start regular containers
 	for idx := range containerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
@@ -2444,13 +2566,50 @@ func (dm *DockerManager) tryContainerStart(container *v1.Container, pod *v1.Pod,
 		// If not overriden, use the namespace mode
 		netMode = namespaceMode
 	}
-
+	if restartCount > 1 {
+		region.EventLog(pod, fmt.Sprintf("容器重启，请查看业务日志。已经重启次数：%d", restartCount), "error")
+	}
 	_, err = dm.runContainerInPod(pod, container, netMode, namespaceMode, pidMode, podIP, imageRef, restartCount)
 	if err != nil {
 		// TODO(bburns) : Perhaps blacklist a container after N failures?
 		return kubecontainer.ErrRunContainer, err.Error()
 	}
+
 	return nil, ""
+}
+
+//fifindActiveAdapterContainer 查找adapter容器状态
+func findActiveAdapterContainer(pod *v1.Pod, podStatus *kubecontainer.PodStatus, adaptorImageName string) (next *v1.Container, status *kubecontainer.ContainerStatus, done bool) {
+	var co *v1.Container
+	for _, c := range pod.Spec.Containers {
+		if c.Image == adaptorImageName {
+			co = &c
+			break
+		}
+	}
+	//未定义adaptor容器
+	if co == nil {
+		// fmt.Println("Adaptor container is nil---------------")
+		return nil, nil, true
+	}
+	// fmt.Println("Adaptor container Name " + co.Name + "--------------")
+	cstatus := podStatus.FindContainerStatusByName(co.Name)
+	// if cstatus != nil {
+	// 	fmt.Println("Adaptor container status Name " + cstatus.Name + "--------------")
+	// }
+	switch {
+	case cstatus == nil: //未创建
+		// fmt.Println("Adaptor container status is nil--------------")
+		return co, nil, false
+	case cstatus.State == kubecontainer.ContainerStateRunning: //已再运行
+		// fmt.Println("Adaptor container status is running--------------")
+		return nil, nil, true
+	case cstatus.State == kubecontainer.ContainerStateExited: //已错误退出
+		// fmt.Println("Adaptor container status is exited--------------")
+		return co, cstatus, false
+	}
+
+	return co, nil, false
 }
 
 // pruneInitContainers ensures that before we begin creating init containers, we have reduced the number

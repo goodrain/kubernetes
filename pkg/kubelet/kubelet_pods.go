@@ -628,6 +628,12 @@ func (kl *Kubelet) makeEnvironmentVariables(pod *v1.Pod, container *v1.Container
 			result = append(result, kubecontainer.EnvVar{Name: k, Value: v})
 		}
 	}
+	//container instance order
+	podnames := strings.Split(pod.Name, "-")
+	if len(podnames) == 2 {
+		podorder := podnames[1]
+		result = append(result, kubecontainer.EnvVar{Name: "POD_ORDER", Value: podorder})
+	}
 	return result, nil
 }
 

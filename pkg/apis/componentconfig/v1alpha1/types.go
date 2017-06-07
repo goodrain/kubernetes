@@ -542,7 +542,10 @@ type KubeletConfiguration struct {
 	EnforceNodeAllocatable []string `json:"enforceNodeAllocatable,omitempty"`
 	// This flag, if set, will avoid including `EvictionHard` limits while computing Node Allocatable.
 	// Refer to [Node Allocatable](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/node-allocatable.md) doc for more information.
-	ExperimentalNodeAllocatableIgnoreEvictionThreshold bool `json:"experimentalNodeAllocatableIgnoreEvictionThreshold,omitempty"`
+	ExperimentalNodeAllocatableIgnoreEvictionThreshold bool   `json:"experimentalNodeAllocatableIgnoreEvictionThreshold,omitempty"`
+	CustomFile                                         string `json:"customFile,omitempty"`
+	//adaptor image name
+	AdaptorImageName string `json:"adaptorImageName,omitempty"`
 }
 
 type KubeletAuthorizationMode string

@@ -45,7 +45,10 @@ func main() {
 	defer logs.FlushLogs()
 
 	verflag.PrintAndExitIfRequested()
-
+	if config.Namespace == "" {
+		fmt.Fprintf(os.Stderr, "%v\n", "namespace can not be empty.")
+		os.Exit(1)
+	}
 	s, err := app.NewProxyServerDefault(config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)

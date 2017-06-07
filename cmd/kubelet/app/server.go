@@ -75,6 +75,7 @@ import (
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/pkg/util/configz"
 	"k8s.io/kubernetes/pkg/util/flock"
 	kubeio "k8s.io/kubernetes/pkg/util/io"
@@ -282,6 +283,7 @@ func initKubeletConfigSync(s *options.KubeletServer) (*componentconfig.KubeletCo
 // Otherwise, the caller is assumed to have set up the KubeletDeps object and a default one will
 // not be generated.
 func Run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) error {
+	region.ParseConfig(s.CustomFile)
 	if err := run(s, kubeDeps); err != nil {
 		return fmt.Errorf("failed to run Kubelet: %v", err)
 

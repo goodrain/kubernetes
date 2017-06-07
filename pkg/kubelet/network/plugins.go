@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/network/hostport"
+	"k8s.io/kubernetes/pkg/region"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
 	utilsysctl "k8s.io/kubernetes/pkg/util/sysctl"
 )
@@ -62,6 +63,9 @@ type NetworkPlugin interface {
 	// Name returns the plugin's name. This will be used when searching
 	// for a plugin by name, e.g.
 	Name() string
+
+	// Name returns the cni plugin type
+	PluginType() string
 
 	// Returns a set of NET_PLUGIN_CAPABILITY_*
 	Capabilities() utilsets.Int
@@ -194,7 +198,10 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host H
 	} else {
 		allErrs = append(allErrs, fmt.Errorf("Network plugin %q not found.", networkPluginName))
 	}
-
+	//设置region api网络类型。目前支持midonet类和calico类（支持pod IP 直接负载的类型）
+	if chosenPlugin.PluginType() != "midonet-cni" {
+		region.SetNetType("calico")
+	}
 	return chosenPlugin, utilerrors.NewAggregate(allErrs)
 }
 
@@ -229,6 +236,9 @@ func (plugin *NoopNetworkPlugin) Event(name string, details map[string]interface
 
 func (plugin *NoopNetworkPlugin) Name() string {
 	return DefaultPluginName
+}
+func (plugin *NoopNetworkPlugin) PluginType() string {
+	return ""
 }
 
 func (plugin *NoopNetworkPlugin) Capabilities() utilsets.Int {
@@ -317,6 +327,10 @@ func NewPluginManager(plugin NetworkPlugin) *PluginManager {
 
 func (pm *PluginManager) PluginName() string {
 	return pm.plugin.Name()
+}
+
+func (pm *PluginManager) PluginType() string {
+	return pm.plugin.PluginType()
 }
 
 func (pm *PluginManager) Event(name string, details map[string]interface{}) {

@@ -48,6 +48,8 @@ type ProxyServerConfig struct {
 	NodeRef           *clientv1.ObjectReference
 	Master            string
 	Kubeconfig        string
+	Namespace         string
+	DependServices    string
 }
 
 func NewProxyConfig() *ProxyServerConfig {
@@ -100,6 +102,7 @@ func (s *ProxyServerConfig) AddFlags(fs *pflag.FlagSet) {
 		&s.ConntrackTCPCloseWaitTimeout.Duration, "conntrack-tcp-timeout-close-wait",
 		s.ConntrackTCPCloseWaitTimeout.Duration,
 		"NAT timeout for TCP connections in the CLOSE_WAIT state")
-
+	fs.StringVar(&s.Namespace, "namespace", "", "the namespace name for proxy")
+	fs.StringVar(&s.DependServices, "depend-service", "", "the depend service alias")
 	utilfeature.DefaultFeatureGate.AddFlag(fs)
 }

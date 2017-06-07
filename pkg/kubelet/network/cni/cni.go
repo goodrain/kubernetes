@@ -56,6 +56,7 @@ type cniNetworkPlugin struct {
 
 type cniNetwork struct {
 	name          string
+	pluginType    string
 	NetworkConfig *libcni.NetworkConfig
 	CNIConfig     libcni.CNI
 }
@@ -106,7 +107,7 @@ func getDefaultCNINetwork(pluginDir, binDir, vendorCNIDirPrefix string) (*cniNet
 		cninet := &libcni.CNIConfig{
 			Path: []string{binDir, vendorDir},
 		}
-		network := &cniNetwork{name: conf.Network.Name, NetworkConfig: conf, CNIConfig: cninet}
+		network := &cniNetwork{name: conf.Network.Name, pluginType: conf.Network.Type, NetworkConfig: conf, CNIConfig: cninet}
 		return network, nil
 	}
 	return nil, fmt.Errorf("No valid networks found in %s", pluginDir)
@@ -181,6 +182,10 @@ func (plugin *cniNetworkPlugin) checkInitialized() error {
 
 func (plugin *cniNetworkPlugin) Name() string {
 	return CNIPluginName
+}
+
+func (plugin *cniNetworkPlugin) PluginType() string {
+	return ""
 }
 
 func (plugin *cniNetworkPlugin) Status() error {

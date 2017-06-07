@@ -839,6 +839,9 @@ func PodFitsHostPorts(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.No
 	// TODO: Aggregate it at the NodeInfo level.
 	existingPorts := GetUsedPorts(nodeInfo.Pods()...)
 	for wport := range wantPorts {
+		if wport == 1 { //goodrain add 需要映射端口的主机端口都为1，到kubelet时分配端口。
+			continue
+		}
 		if wport != 0 && existingPorts[wport] {
 			return false, []algorithm.PredicateFailureReason{ErrPodNotFitsHostPorts}, nil
 		}
