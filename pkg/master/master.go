@@ -429,7 +429,7 @@ func (m *Master) getAllNodeInfo() (map[string]map[string]string, error) {
 }
 
 func (m *Master) excitNode(nodeName string) error {
-	err := m.NodeClient.Delete(nodeName, *metav1.DeleteOptions{})
+	err := m.NodeClient.Delete(nodeName, &metav1.DeleteOptions{})
 	if err != nil {
 		return err
 	}
