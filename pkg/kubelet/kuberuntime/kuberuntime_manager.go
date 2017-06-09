@@ -718,6 +718,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			if msg, err := m.startContainer(podSandboxID, podSandboxConfig, container, pod, podStatus, pullSecrets, podIP); err != nil {
 				startContainerResult.Fail(err, msg)
 				utilruntime.HandleError(fmt.Errorf("adapter container start failed: %v: %s", err, msg))
+				region.EventLog(pod, "网络代理容器启动失败，系统将重试!", "error")
 			}
 			return
 		}
@@ -728,7 +729,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		container := &pod.Spec.Containers[idx]
 		startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
 		result.AddSyncResult(startContainerResult)
-
 		isInBackOff, msg, err := m.doBackOff(pod, container, podStatus, backOff)
 		if isInBackOff {
 			startContainerResult.Fail(err, msg)

@@ -543,51 +543,53 @@ func podName(pod *v1.Pod) string {
 	return pod.Namespace + "/" + pod.Name
 }
 
+// PodFitsResources goodrain change
+// Ignore the node resource constraints
 func PodFitsResources(pod *v1.Pod, meta interface{}, nodeInfo *schedulercache.NodeInfo) (bool, []algorithm.PredicateFailureReason, error) {
-	node := nodeInfo.Node()
-	if node == nil {
-		return false, nil, fmt.Errorf("node not found")
-	}
+	// node := nodeInfo.Node()
+	// if node == nil {
+	// 	return false, nil, fmt.Errorf("node not found")
+	// }
 
 	var predicateFails []algorithm.PredicateFailureReason
-	allowedPodNumber := nodeInfo.AllowedPodNumber()
-	if len(nodeInfo.Pods())+1 > allowedPodNumber {
-		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourcePods, 1, int64(len(nodeInfo.Pods())), int64(allowedPodNumber)))
-	}
+	// allowedPodNumber := nodeInfo.AllowedPodNumber()
+	// if len(nodeInfo.Pods())+1 > allowedPodNumber {
+	// 	predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourcePods, 1, int64(len(nodeInfo.Pods())), int64(allowedPodNumber)))
+	// }
 
-	var podRequest *schedulercache.Resource
-	if predicateMeta, ok := meta.(*predicateMetadata); ok {
-		podRequest = predicateMeta.podRequest
-	} else {
-		// We couldn't parse metadata - fallback to computing it.
-		podRequest = GetResourceRequest(pod)
-	}
-	if podRequest.MilliCPU == 0 && podRequest.Memory == 0 && podRequest.NvidiaGPU == 0 && len(podRequest.OpaqueIntResources) == 0 {
-		return len(predicateFails) == 0, predicateFails, nil
-	}
+	// var podRequest *schedulercache.Resource
+	// if predicateMeta, ok := meta.(*predicateMetadata); ok {
+	// 	podRequest = predicateMeta.podRequest
+	// } else {
+	// 	// We couldn't parse metadata - fallback to computing it.
+	// 	podRequest = GetResourceRequest(pod)
+	// }
+	// if podRequest.MilliCPU == 0 && podRequest.Memory == 0 && podRequest.NvidiaGPU == 0 && len(podRequest.OpaqueIntResources) == 0 {
+	// 	return len(predicateFails) == 0, predicateFails, nil
+	// }
 
-	allocatable := nodeInfo.AllocatableResource()
-	if allocatable.MilliCPU < podRequest.MilliCPU+nodeInfo.RequestedResource().MilliCPU {
-		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceCPU, podRequest.MilliCPU, nodeInfo.RequestedResource().MilliCPU, allocatable.MilliCPU))
-	}
-	if allocatable.Memory < podRequest.Memory+nodeInfo.RequestedResource().Memory {
-		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceMemory, podRequest.Memory, nodeInfo.RequestedResource().Memory, allocatable.Memory))
-	}
-	if allocatable.NvidiaGPU < podRequest.NvidiaGPU+nodeInfo.RequestedResource().NvidiaGPU {
-		predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceNvidiaGPU, podRequest.NvidiaGPU, nodeInfo.RequestedResource().NvidiaGPU, allocatable.NvidiaGPU))
-	}
-	for rName, rQuant := range podRequest.OpaqueIntResources {
-		if allocatable.OpaqueIntResources[rName] < rQuant+nodeInfo.RequestedResource().OpaqueIntResources[rName] {
-			predicateFails = append(predicateFails, NewInsufficientResourceError(rName, podRequest.OpaqueIntResources[rName], nodeInfo.RequestedResource().OpaqueIntResources[rName], allocatable.OpaqueIntResources[rName]))
-		}
-	}
+	// allocatable := nodeInfo.AllocatableResource()
+	// if allocatable.MilliCPU < podRequest.MilliCPU+nodeInfo.RequestedResource().MilliCPU {
+	// 	predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceCPU, podRequest.MilliCPU, nodeInfo.RequestedResource().MilliCPU, allocatable.MilliCPU))
+	// }
+	// if allocatable.Memory < podRequest.Memory+nodeInfo.RequestedResource().Memory {
+	// 	predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceMemory, podRequest.Memory, nodeInfo.RequestedResource().Memory, allocatable.Memory))
+	// }
+	// if allocatable.NvidiaGPU < podRequest.NvidiaGPU+nodeInfo.RequestedResource().NvidiaGPU {
+	// 	predicateFails = append(predicateFails, NewInsufficientResourceError(v1.ResourceNvidiaGPU, podRequest.NvidiaGPU, nodeInfo.RequestedResource().NvidiaGPU, allocatable.NvidiaGPU))
+	// }
+	// for rName, rQuant := range podRequest.OpaqueIntResources {
+	// 	if allocatable.OpaqueIntResources[rName] < rQuant+nodeInfo.RequestedResource().OpaqueIntResources[rName] {
+	// 		predicateFails = append(predicateFails, NewInsufficientResourceError(rName, podRequest.OpaqueIntResources[rName], nodeInfo.RequestedResource().OpaqueIntResources[rName], allocatable.OpaqueIntResources[rName]))
+	// 	}
+	// }
 
-	if glog.V(10) && len(predicateFails) == 0 {
-		// We explicitly don't do glog.V(10).Infof() to avoid computing all the parameters if this is
-		// not logged. There is visible performance gain from it.
-		glog.Infof("Schedule Pod %+v on Node %+v is allowed, Node is running only %v out of %v Pods.",
-			podName(pod), node.Name, len(nodeInfo.Pods()), allowedPodNumber)
-	}
+	// if glog.V(10) && len(predicateFails) == 0 {
+	// 	// We explicitly don't do glog.V(10).Infof() to avoid computing all the parameters if this is
+	// 	// not logged. There is visible performance gain from it.
+	// 	glog.Infof("Schedule Pod %+v on Node %+v is allowed, Node is running only %v out of %v Pods.",
+	// 		podName(pod), node.Name, len(nodeInfo.Pods()), allowedPodNumber)
+	// }
 	return len(predicateFails) == 0, predicateFails, nil
 }
 

@@ -41,6 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/pkg/util/selinux"
 	"k8s.io/kubernetes/pkg/util/tail"
 )
@@ -52,9 +53,6 @@ import (
 // * start the container
 // * run the post start lifecycle hooks (if applicable)
 func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandboxConfig *runtimeapi.PodSandboxConfig, container *v1.Container, pod *v1.Pod, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, podIP string) (string, error) {
-
-	// Step 0: add podIP to env
-	container.Env = append(container.Env, v1.EnvVar{Name: "POD_NET_IP", Value: podIP})
 
 	// Step 1: pull the image.
 	imageRef, msg, err := m.imagePuller.EnsureImageExists(pod, container, pullSecrets)
@@ -74,6 +72,9 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 	containerStatus := podStatus.FindContainerStatusByName(container.Name)
 	if containerStatus != nil {
 		restartCount = containerStatus.RestartCount + 1
+	}
+	if restartCount > 0 {
+		region.EventLog(pod, fmt.Sprintf("容器%s发生重启,重启次数%d", container.Name, restartCount), "error")
 	}
 
 	containerConfig, err := m.generateContainerConfig(container, pod, restartCount, podIP, imageRef)
