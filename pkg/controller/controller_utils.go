@@ -44,6 +44,7 @@ import (
 	extensions "k8s.io/kubernetes/pkg/apis/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	clientretry "k8s.io/kubernetes/pkg/client/retry"
+	"k8s.io/kubernetes/pkg/region"
 
 	"github.com/golang/glog"
 )
@@ -568,6 +569,14 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 }
 
 func (r RealPodControl) DeletePod(namespace string, podID string, object runtime.Object) error {
+	var sleep, err = region.DrainPod(podID)
+	if err != nil {
+		glog.Errorf("drain pod %v, got error: %v", podID, err)
+	} else {
+		glog.V(2).Infof("drain pod %v, and sleep %d seconds for code down", podID, sleep)
+		time.Sleep(time.Duration(sleep) * time.Second)
+		glog.V(2).Infof("sleep finished, delete pod %v", podID)
+	}
 	accessor, err := meta.Accessor(object)
 	if err != nil {
 		return fmt.Errorf("object does not have ObjectMeta, %v", err)
@@ -576,9 +585,8 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 	if err := r.KubeClient.Core().Pods(namespace).Delete(podID, nil); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
-	} else {
-		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 	}
+	r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
 	return nil
 }
 

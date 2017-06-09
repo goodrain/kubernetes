@@ -429,7 +429,7 @@ func DownK8sNode(hostIP string) {
 }
 
 //NotifyService 通知服务
-func NotifyService(pod *v1.Pod, netModPid int) error {
+func NotifyService(pod *v1.Pod) error {
 	var version = ""
 	if v, ok := pod.Labels["version"]; ok {
 		version = v

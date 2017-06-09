@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -44,6 +45,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/cache"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/region"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
 )
 
@@ -700,6 +702,27 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		return
 	}
 
+	// Step 6: start adapter container if necessary
+	for idx := range podContainerChanges.ContainersToStart {
+		container := &pod.Spec.Containers[idx]
+		if strings.HasPrefix(container.Name, "adapter") {
+			glog.V(4).Infof("start adapter container %+v in pod %v", container, format.Pod(pod))
+			startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
+			result.AddSyncResult(startContainerResult)
+			isInBackOff, msg, err := m.doBackOff(pod, container, podStatus, backOff)
+			if isInBackOff {
+				startContainerResult.Fail(err, msg)
+				glog.V(4).Infof("Backing Off restarting adapter container %+v in pod %v", container, format.Pod(pod))
+				return
+			}
+			if msg, err := m.startContainer(podSandboxID, podSandboxConfig, container, pod, podStatus, pullSecrets, podIP); err != nil {
+				startContainerResult.Fail(err, msg)
+				utilruntime.HandleError(fmt.Errorf("adapter container start failed: %v: %s", err, msg))
+			}
+			return
+		}
+	}
+
 	// Step 6: start containers in podContainerChanges.ContainersToStart.
 	for idx := range podContainerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
@@ -718,6 +741,14 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			startContainerResult.Fail(err, msg)
 			utilruntime.HandleError(fmt.Errorf("container start failed: %v: %s", err, msg))
 			continue
+		} else {
+			// Step 7: if container is business container,excute region hook   /change by goodrain
+			glog.V(2).Infof("Start to notify service: %s", pod.Name)
+			pod.Status.PodIP = podIP
+			err := region.NotifyService(pod)
+			if err != nil {
+				region.EventLog(pod, "应用启动后通知失败，负载均衡不会写入。失败原因："+err.Error(), "error")
+			}
 		}
 	}
 

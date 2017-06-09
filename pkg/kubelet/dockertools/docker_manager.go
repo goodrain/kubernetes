@@ -1813,14 +1813,6 @@ func (dm *DockerManager) runContainerInPod(pod *v1.Pod, container *v1.Container,
 	if err != nil {
 		return kubecontainer.ContainerID{}, fmt.Errorf("GenerateRunContainerOptions: %v", err)
 	}
-	var netModPid int
-	nets := strings.Split(netMode, ":")
-	if len(nets) == 2 {
-		container, err := dm.client.InspectContainer(nets[1])
-		if err == nil {
-			netModPid = container.State.Pid
-		}
-	}
 	utsMode := ""
 	if kubecontainer.IsHostNetworkPod(pod) {
 		utsMode = namespaceModeHost
@@ -1901,9 +1893,9 @@ func (dm *DockerManager) runContainerInPod(pod *v1.Pod, container *v1.Container,
 
 	// notify service start running 业务容器启动时
 	if container.Name != PodInfraContainerName && container.Image != dm.AdaptorImageName {
-		glog.Infof("start to notify service: v%", pod.Name)
+		glog.V(2).Infof("Start to notify service: %s", pod.Name)
 		pod.Status.PodIP = podIP
-		err := region.NotifyService(pod, netModPid)
+		err := region.NotifyService(pod)
 		if err != nil {
 			region.EventLog(pod, "应用启动后通知失败，负载均衡不会写入。失败原因："+err.Error(), "error")
 		}
@@ -2503,7 +2495,7 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 		}
 
 		// Successfully started the container; clear the entry in the failure
-		glog.V(4).Infof("Completed adapter container %q for pod %q", container.Name, format.Pod(pod))
+		glog.V(2).Infof("Completed adapter container %q for pod %q", container.Name, format.Pod(pod))
 		return
 	}
 	//adapter 容器已经启动

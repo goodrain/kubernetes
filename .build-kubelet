@@ -1,0 +1,1 @@
+docker run --rm -it -v `pwd`:/go/src/k8s.io/kubernetes -w /go/src/k8s.io/kubernetes kube-build:build-8cb785184d-5-v1.7.5-2 go build -o  kubelet ./cmd/kubelet

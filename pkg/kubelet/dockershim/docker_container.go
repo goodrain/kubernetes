@@ -136,6 +136,12 @@ func (ds *dockerService) CreateContainer(podSandboxID string, config *runtimeapi
 			StdinOnce: config.StdinOnce,
 			Tty:       config.Tty,
 		},
+		// change by goodrain .use zmqlog log-driver
+		HostConfig: &dockercontainer.HostConfig{
+			LogConfig: dockercontainer.LogConfig{
+				Type: "zmqlog",
+			},
+		},
 	}
 
 	// Fill the HostConfig.

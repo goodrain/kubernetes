@@ -52,6 +52,10 @@ import (
 // * start the container
 // * run the post start lifecycle hooks (if applicable)
 func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandboxConfig *runtimeapi.PodSandboxConfig, container *v1.Container, pod *v1.Pod, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, podIP string) (string, error) {
+
+	// Step 0: add podIP to env
+	container.Env = append(container.Env, v1.EnvVar{Name: "POD_NET_IP", Value: podIP})
+
 	// Step 1: pull the image.
 	imageRef, msg, err := m.imagePuller.EnsureImageExists(pod, container, pullSecrets)
 	if err != nil {
@@ -126,7 +130,7 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 			return "PostStart Hook Failed", err
 		}
 	}
-
+	// Step 5: if container is business container,excute region hook   /change by goodrain
 	return "", nil
 }
 
