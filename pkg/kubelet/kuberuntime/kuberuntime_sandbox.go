@@ -29,6 +29,7 @@ import (
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 // createPodSandbox creates a pod sandbox and returns (podSandBoxID, message, error).
@@ -52,6 +53,7 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 	if err != nil {
 		message := fmt.Sprintf("CreatePodSandbox for pod %q failed: %v", format.Pod(pod), err)
 		glog.Error(message)
+		region.EventLog(pod, "应用网络空间设置失败，系统将重试，若未成功，请联系客服！", "error")
 		return "", message, err
 	}
 

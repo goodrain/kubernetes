@@ -705,6 +705,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 	// Step 6: start adapter container if necessary
 	for idx := range podContainerChanges.ContainersToStart {
 		container := &pod.Spec.Containers[idx]
+
 		if strings.HasPrefix(container.Name, "adapter") {
 			glog.V(4).Infof("start adapter container %+v in pod %v", container, format.Pod(pod))
 			startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)

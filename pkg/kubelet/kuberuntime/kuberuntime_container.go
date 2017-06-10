@@ -131,7 +131,6 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 			return "PostStart Hook Failed", err
 		}
 	}
-	// Step 5: if container is business container,excute region hook   /change by goodrain
 	return "", nil
 }
 
@@ -187,6 +186,7 @@ func (m *kubeGenericRuntimeManager) generateContainerConfig(container *v1.Contai
 			Value: e.Value,
 		}
 	}
+	envs = append(envs, &runtimeapi.KeyValue{Key: "POD_NET_IP", Value: podIP})
 	config.Envs = envs
 
 	return config, nil
