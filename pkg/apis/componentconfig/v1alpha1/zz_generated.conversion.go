@@ -21,14 +21,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	unsafe "unsafe"
-
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	api "k8s.io/kubernetes/pkg/api"
 	api_v1 "k8s.io/kubernetes/pkg/api/v1"
 	componentconfig "k8s.io/kubernetes/pkg/apis/componentconfig"
+	unsafe "unsafe"
 )
 
 func init() {
@@ -623,10 +622,11 @@ func autoConvert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfigu
 	out.KubeReservedCgroup = in.KubeReservedCgroup
 	out.EnforceNodeAllocatable = *(*[]string)(unsafe.Pointer(&in.EnforceNodeAllocatable))
 	out.ExperimentalNodeAllocatableIgnoreEvictionThreshold = in.ExperimentalNodeAllocatableIgnoreEvictionThreshold
-	// WARNING: in.CustomFile requires manual conversion: does not exist in peer-type
-	// WARNING: in.AdaptorImageName requires manual conversion: does not exist in peer-type
+	out.CustomFile = in.CustomFile
+	out.AdaptorImageName = in.AdaptorImageName
 	return nil
 }
+
 func Convert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfiguration(in *componentconfig.KubeletConfiguration, out *KubeletConfiguration, s conversion.Scope) error {
 	return autoConvert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfiguration(in, out, s)
 }

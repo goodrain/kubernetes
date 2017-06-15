@@ -21,6 +21,8 @@ import (
 	"net"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/golang/glog"
 	kubetypes "k8s.io/apimachinery/pkg/types"
@@ -48,7 +50,32 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 		glog.Errorf(message)
 		return "", message, err
 	}
-
+	// Create map host port change from goodrain
+	var bindingPort string
+	for _, port := range podSandboxConfig.GetPortMappings() {
+		var exteriorPort int
+		if port.HostPort > 0 {
+			hostID := region.ReadMidomanUUID()
+			portNumber := region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
+			if portNumber == "" {
+				glog.Errorf(" %q not apply host port", hostID)
+				portNumber = region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
+			}
+			if portNumber != "" {
+				var err error
+				exteriorPort, err = strconv.Atoi(portNumber)
+				if err != nil {
+					exteriorPort = 0
+					continue
+				}
+				if bindingPort != "" {
+					bindingPort = bindingPort + "-"
+				}
+				bindingPort = bindingPort + portNumber
+			}
+		}
+		port.HostPort = int32(exteriorPort)
+	}
 	podSandBoxID, err := m.runtimeService.RunPodSandbox(podSandboxConfig)
 	if err != nil {
 		message := fmt.Sprintf("CreatePodSandbox for pod %q failed: %v", format.Pod(pod), err)
@@ -56,7 +83,22 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 		region.EventLog(pod, "应用网络空间设置失败，系统将重试，若未成功，请联系客服！", "error")
 		return "", message, err
 	}
-
+	if bindingPort != "" {
+		replicaID := strings.Split(pod.Name, "-")[0]
+		hostID := region.ReadMidomanUUID()
+		var version = ""
+		if v, ok := pod.Labels["version"]; ok {
+			version = v
+		}
+		applyResult := region.PostContainerIDNew(hostID, bindingPort, podSandBoxID, replicaID, version, pod.Name)
+		if applyResult == "" {
+			glog.Errorf(" %q not report container port", replicaID)
+			result := region.PostContainerIDNew(hostID, bindingPort, podSandBoxID, replicaID, version, pod.Name)
+			if result == "" {
+				glog.Errorf(" %q not report container port agin", replicaID)
+			}
+		}
+	}
 	return podSandBoxID, "", nil
 }
 
