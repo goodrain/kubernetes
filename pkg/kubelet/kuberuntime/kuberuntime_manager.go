@@ -501,6 +501,7 @@ func (m *kubeGenericRuntimeManager) computePodContainerChanges(pod *v1.Pod, podS
 		if pod.Spec.RestartPolicy != v1.RestartPolicyNever {
 			message := fmt.Sprintf("pod %q container %q is unhealthy, it will be killed and re-created.", format.Pod(pod), container.Name)
 			glog.Info(message)
+			region.EventLog(pod, fmt.Sprintf("Container %q 健康检测不通过，将会重启。", container.Name), "error")
 			changes.ContainersToStart[index] = message
 		}
 	}
@@ -650,7 +651,30 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		return
 	}
 
-	// Step 5: start init containers.
+	// Step 5: start adapter container if necessary before init container.
+	for idx := range podContainerChanges.ContainersToStart {
+		container := &pod.Spec.Containers[idx]
+
+		if strings.HasPrefix(container.Name, "adapter") {
+			glog.V(4).Infof("start adapter container %+v in pod %v", container, format.Pod(pod))
+			startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
+			result.AddSyncResult(startContainerResult)
+			isInBackOff, msg, err := m.doBackOff(pod, container, podStatus, backOff)
+			if isInBackOff {
+				startContainerResult.Fail(err, msg)
+				glog.V(4).Infof("Backing Off restarting adapter container %+v in pod %v", container, format.Pod(pod))
+				return
+			}
+			if msg, err := m.startContainer(podSandboxID, podSandboxConfig, container, pod, podStatus, pullSecrets, podIP); err != nil {
+				startContainerResult.Fail(err, msg)
+				utilruntime.HandleError(fmt.Errorf("adapter container start failed: %v: %s", err, msg))
+				region.EventLog(pod, "网络代理容器启动失败，系统将重试!", "error")
+			}
+			return
+		}
+	}
+
+	// Step 6: start init containers.
 	status, next, done := findNextInitContainerToRun(pod, podStatus)
 	if status != nil && status.ExitCode != 0 {
 		// container initialization has failed, flag the pod as failed
@@ -700,29 +724,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 	if podContainerChanges.InitFailed {
 		glog.V(4).Infof("Not all init containers have succeeded for pod %v", format.Pod(pod))
 		return
-	}
-
-	// Step 6: start adapter container if necessary
-	for idx := range podContainerChanges.ContainersToStart {
-		container := &pod.Spec.Containers[idx]
-
-		if strings.HasPrefix(container.Name, "adapter") {
-			glog.V(4).Infof("start adapter container %+v in pod %v", container, format.Pod(pod))
-			startContainerResult := kubecontainer.NewSyncResult(kubecontainer.StartContainer, container.Name)
-			result.AddSyncResult(startContainerResult)
-			isInBackOff, msg, err := m.doBackOff(pod, container, podStatus, backOff)
-			if isInBackOff {
-				startContainerResult.Fail(err, msg)
-				glog.V(4).Infof("Backing Off restarting adapter container %+v in pod %v", container, format.Pod(pod))
-				return
-			}
-			if msg, err := m.startContainer(podSandboxID, podSandboxConfig, container, pod, podStatus, pullSecrets, podIP); err != nil {
-				startContainerResult.Fail(err, msg)
-				utilruntime.HandleError(fmt.Errorf("adapter container start failed: %v: %s", err, msg))
-				region.EventLog(pod, "网络代理容器启动失败，系统将重试!", "error")
-			}
-			return
-		}
 	}
 
 	// Step 6: start containers in podContainerChanges.ContainersToStart.

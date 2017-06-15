@@ -57,6 +57,7 @@ func (m *kubeGenericRuntimeManager) startContainer(podSandboxID string, podSandb
 	// Step 1: pull the image.
 	imageRef, msg, err := m.imagePuller.EnsureImageExists(pod, container, pullSecrets)
 	if err != nil {
+		region.EventLog(pod, fmt.Sprintf("启动容器%s获取镜像失败。若你多次看到此提醒，请尝试关闭应用重新构建。", container.Name), "error")
 		return msg, err
 	}
 
