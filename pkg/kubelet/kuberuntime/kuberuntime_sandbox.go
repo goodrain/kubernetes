@@ -52,29 +52,31 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 	}
 	// Create map host port change from goodrain
 	var bindingPort string
-	for _, port := range podSandboxConfig.GetPortMappings() {
-		var exteriorPort int
-		if port.HostPort > 0 {
-			hostID := region.ReadMidomanUUID()
-			portNumber := region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
-			if portNumber == "" {
-				glog.Errorf(" %q not apply host port", hostID)
-				portNumber = region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
-			}
-			if portNumber != "" {
-				var err error
-				exteriorPort, err = strconv.Atoi(portNumber)
-				if err != nil {
-					exteriorPort = 0
-					continue
+	if ports := podSandboxConfig.GetPortMappings(); ports != nil {
+		for _, port := range ports {
+			var exteriorPort int
+			if port.HostPort > 0 {
+				hostID := region.ReadMidomanUUID()
+				portNumber := region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
+				if portNumber == "" {
+					glog.Errorf(" %q not apply host port", hostID)
+					portNumber = region.GetDockerPort(hostID, strconv.Itoa(int(port.ContainerPort)), pod.Name)
 				}
-				if bindingPort != "" {
-					bindingPort = bindingPort + "-"
+				if portNumber != "" {
+					var err error
+					exteriorPort, err = strconv.Atoi(portNumber)
+					if err != nil {
+						exteriorPort = 0
+						continue
+					}
+					if bindingPort != "" {
+						bindingPort = bindingPort + "-"
+					}
+					bindingPort = bindingPort + portNumber
 				}
-				bindingPort = bindingPort + portNumber
 			}
+			port.HostPort = int32(exteriorPort)
 		}
-		port.HostPort = int32(exteriorPort)
 	}
 	podSandBoxID, err := m.runtimeService.RunPodSandbox(podSandboxConfig)
 	if err != nil {
@@ -83,6 +85,7 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 		region.EventLog(pod, "应用网络空间设置失败，系统将重试，若未成功，请联系客服！", "error")
 		return "", message, err
 	}
+	// if have a bing port could notifly region change by goodrain
 	if bindingPort != "" {
 		replicaID := strings.Split(pod.Name, "-")[0]
 		hostID := region.ReadMidomanUUID()
