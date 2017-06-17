@@ -546,6 +546,10 @@ type KubeletConfiguration struct {
 	CustomFile                                         string `json:"customFile,omitempty"`
 	//adaptor image name
 	AdaptorImageName string `json:"adaptorImageName,omitempty"`
+	//docker container log plugin type name
+	LoggerType string `json:"loggerType,omitempty"`
+	//docker container log plugin config
+	LoggerConfig []string `json:"loggerConfig,omitempty"`
 }
 
 type KubeletAuthorizationMode string

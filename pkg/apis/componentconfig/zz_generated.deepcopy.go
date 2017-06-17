@@ -208,6 +208,11 @@ func DeepCopy_componentconfig_KubeletConfiguration(in interface{}, out interface
 			*out = make([]string, len(*in))
 			copy(*out, *in)
 		}
+		if in.LoggerConfig != nil {
+			in, out := &in.LoggerConfig, &out.LoggerConfig
+			*out = make([]string, len(*in))
+			copy(*out, *in)
+		}
 		return nil
 	}
 }

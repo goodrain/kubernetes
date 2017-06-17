@@ -509,6 +509,10 @@ type KubeletConfiguration struct {
 	CustomFile string
 	//adaptor image name
 	AdaptorImageName string
+	//docker container log plugin type name
+	LoggerType string
+	//docker container log plugin config
+	LoggerConfig []string
 }
 
 type KubeletAuthorizationMode string

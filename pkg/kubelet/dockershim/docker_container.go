@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	dockertypes "github.com/docker/engine-api/types"
@@ -137,14 +138,23 @@ func (ds *dockerService) CreateContainer(podSandboxID string, config *runtimeapi
 			Tty:       config.Tty,
 		},
 	}
-
+	var loggerConfigMap = make(map[string]string, 0)
+	if ds.loggerConfig != nil && len(ds.loggerConfig) > 0 {
+		for _, cfg := range ds.loggerConfig {
+			if strings.Contains(cfg, "=") {
+				kv := strings.Split(cfg, "=")
+				loggerConfigMap[kv[0]] = kv[1]
+			}
+		}
+	}
 	// Fill the HostConfig.
 	hc := &dockercontainer.HostConfig{
 		Binds: generateMountBindings(config.GetMounts()),
 
 		// change by goodrain .use zmqlog log-driver,
 		LogConfig: dockercontainer.LogConfig{
-			Type: "zmqlog",
+			Type:   ds.loggerType,
+			Config: loggerConfigMap,
 		},
 	}
 

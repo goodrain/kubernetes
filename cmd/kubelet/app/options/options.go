@@ -275,4 +275,6 @@ func (s *KubeletServer) AddFlags(fs *pflag.FlagSet) {
 	fs.Var(&s.ExperimentalQOSReserved, "experimental-qos-reserved", "A set of ResourceName=Percentage (e.g. memory=50%) pairs that describe how pod resource requests are reserved at the QoS level. Currently only memory is supported. [default=none]")
 	fs.StringVar(&s.CustomFile, "custom-config", region.CustomFile, "Custom config file")
 	fs.StringVar(&s.AdaptorImageName, "adaptor-image-name", "goodrain.me/adapter", "adaptor container image name")
+	fs.StringVar(&s.LoggerType, "log-driver", "zmq", "Logging driver for the docker container")
+	fs.StringSliceVar(&s.LoggerConfig, "log-opt", []string{}, "Log driver options")
 }

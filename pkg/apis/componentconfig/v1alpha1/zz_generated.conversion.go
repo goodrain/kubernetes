@@ -423,6 +423,8 @@ func autoConvert_v1alpha1_KubeletConfiguration_To_componentconfig_KubeletConfigu
 	out.ExperimentalNodeAllocatableIgnoreEvictionThreshold = in.ExperimentalNodeAllocatableIgnoreEvictionThreshold
 	out.CustomFile = in.CustomFile
 	out.AdaptorImageName = in.AdaptorImageName
+	out.LoggerType = in.LoggerType
+	out.LoggerConfig = *(*[]string)(unsafe.Pointer(&in.LoggerConfig))
 	return nil
 }
 
@@ -624,6 +626,8 @@ func autoConvert_componentconfig_KubeletConfiguration_To_v1alpha1_KubeletConfigu
 	out.ExperimentalNodeAllocatableIgnoreEvictionThreshold = in.ExperimentalNodeAllocatableIgnoreEvictionThreshold
 	out.CustomFile = in.CustomFile
 	out.AdaptorImageName = in.AdaptorImageName
+	out.LoggerType = in.LoggerType
+	out.LoggerConfig = *(*[]string)(unsafe.Pointer(&in.LoggerConfig))
 	return nil
 }
 
