@@ -225,5 +225,13 @@ func (w *worker) doProbe() (keepGoing bool) {
 		w.onHold = true
 	}
 
+	//finally if probe type is readiness and result is True stop the worker
+	if w.probeType == readiness && result == results.Success {
+		glog.V(2).Infof("pod container readiness probed success,work exist.: %v - %v",
+			format.Pod(w.pod), w.container.Name)
+		w.probeManager.removeWorker(w.pod.UID, w.container.Name, w.probeType)
+		return false
+	}
+
 	return true
 }
