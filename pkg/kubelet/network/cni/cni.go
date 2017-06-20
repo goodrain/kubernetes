@@ -185,7 +185,7 @@ func (plugin *cniNetworkPlugin) Name() string {
 }
 
 func (plugin *cniNetworkPlugin) PluginType() string {
-	return ""
+	return plugin.defaultNetwork.pluginType
 }
 
 func (plugin *cniNetworkPlugin) Status() error {
