@@ -74,6 +74,9 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 					}
 					bindingPort = bindingPort + portNumber
 				}
+				if exteriorPort > 0 {
+					glog.V(2).Infof("Set host port map success. port is %d", exteriorPort)
+				}
 			}
 			port.HostPort = int32(exteriorPort)
 		}

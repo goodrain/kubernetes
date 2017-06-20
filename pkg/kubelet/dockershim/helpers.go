@@ -145,6 +145,7 @@ func makePortsAndBindings(pm []*runtimeapi.PortMapping) (map[dockernat.Port]stru
 			// No need to do port binding when HostPort is not specified
 			continue
 		}
+		glog.V(2).Infof("docker set host port map .port is %d", exteriorPort)
 		interiorPort := port.ContainerPort
 		// Some of this port stuff is under-documented voodoo.
 		// See http://stackoverflow.com/questions/20428302/binding-a-port-to-a-host-interface-using-the-rest-api
