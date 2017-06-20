@@ -31,6 +31,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 const (
@@ -485,7 +486,10 @@ func (ds *dockerService) makeSandboxDockerConfig(c *runtimeapi.PodSandboxConfig,
 		},
 		HostConfig: hc,
 	}
-
+	// Set container networkmode for midonet cni. change by goodrain
+	if region.NetType == "midolnet" {
+		hc.NetworkMode = "bridge"
+	}
 	// Set sysctls if requested
 	sysctls, err := getSysctlsFromAnnotations(c.Annotations)
 	if err != nil {
