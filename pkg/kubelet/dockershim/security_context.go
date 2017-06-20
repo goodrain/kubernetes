@@ -26,6 +26,7 @@ import (
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 	"k8s.io/kubernetes/pkg/kubelet/dockertools/securitycontext"
 	knetwork "k8s.io/kubernetes/pkg/kubelet/network"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 // applySandboxSecurityContext updates docker sandbox options according to security context.
@@ -149,7 +150,11 @@ func modifyHostNetworkOptionForSandbox(hostNetwork bool, network *knetwork.Plugi
 
 	switch network.PluginName() {
 	case "cni":
-		fallthrough
+		if region.NetType == "midolnet" {
+			hc.NetworkMode = "bridge"
+		} else {
+			hc.NetworkMode = "none"
+		}
 	case "kubenet":
 		hc.NetworkMode = "none"
 	default:
