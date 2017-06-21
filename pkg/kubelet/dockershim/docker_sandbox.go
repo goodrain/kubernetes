@@ -18,12 +18,14 @@ package dockershim
 
 import (
 	"fmt"
+	"strings"
 
 	dockertypes "github.com/docker/engine-api/types"
 	dockercontainer "github.com/docker/engine-api/types/container"
 	dockerfilters "github.com/docker/engine-api/types/filters"
 	"github.com/golang/glog"
 
+	apimachinery "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -31,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/types"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 const (
@@ -277,6 +280,12 @@ func (ds *dockerService) getIP(sandbox *dockertypes.ContainerJSON) (string, erro
 
 // PodSandboxStatus returns the status of the PodSandbox.
 func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodSandboxStatus, error) {
+	var podUID string
+	if strings.Contains(podSandboxID, ",") {
+		ids := strings.Split(podSandboxID, ",")
+		podSandboxID = ids[0]
+		podUID = ids[1]
+	}
 	// Inspect the container.
 	r, err := ds.client.InspectContainer(podSandboxID)
 	if err != nil {
@@ -296,12 +305,12 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 		state = runtimeapi.PodSandboxState_SANDBOX_READY
 	}
 	dockerBridgeIP := r.NetworkSettings.IPAddress
+	if podUID != "" {
+		region.SetDockerBridgeIP(apimachinery.UID(podUID), dockerBridgeIP)
+	}
 	IP, err := ds.getIP(r)
 	if err != nil {
 		return nil, err
-	}
-	if dockerBridgeIP != "" {
-		IP = IP + "," + dockerBridgeIP
 	}
 	network := &runtimeapi.PodSandboxNetworkStatus{Ip: IP}
 	netNS := getNetworkNamespace(r)
