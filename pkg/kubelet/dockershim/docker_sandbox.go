@@ -295,9 +295,13 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 	if r.State.Running {
 		state = runtimeapi.PodSandboxState_SANDBOX_READY
 	}
+	dockerBridgeIP := r.NetworkSettings.IPAddress
 	IP, err := ds.getIP(r)
 	if err != nil {
 		return nil, err
+	}
+	if dockerBridgeIP != "" {
+		IP = IP + "," + dockerBridgeIP
 	}
 	network := &runtimeapi.PodSandboxNetworkStatus{Ip: IP}
 	netNS := getNetworkNamespace(r)

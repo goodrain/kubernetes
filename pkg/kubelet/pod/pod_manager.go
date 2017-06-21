@@ -23,6 +23,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/secret"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 // Manager stores and manages access to pods, maintaining the mappings
@@ -187,6 +188,8 @@ func (pm *basicManager) DeletePod(pod *v1.Pod) {
 		pm.secretManager.UnregisterPod(pod)
 	}
 	podFullName := kubecontainer.GetPodFullName(pod)
+	//remove conatiner eth1 ip cache change by goodrain
+	region.RemoveDockerBridgeIP(pod.UID)
 	if IsMirrorPod(pod) {
 		delete(pm.mirrorPodByUID, pod.UID)
 		delete(pm.mirrorPodByFullName, podFullName)

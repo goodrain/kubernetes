@@ -80,7 +80,6 @@ func newWorker(
 		probeType:    probeType,
 		probeManager: m,
 	}
-
 	switch probeType {
 	case readiness:
 		w.spec = container.ReadinessProbe

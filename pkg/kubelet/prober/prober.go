@@ -40,6 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/exec"
 
 	"github.com/golang/glog"
+	"k8s.io/kubernetes/pkg/region"
 )
 
 const maxProbeRetries = 3
@@ -150,7 +151,11 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		scheme := strings.ToLower(string(p.HTTPGet.Scheme))
 		host := p.HTTPGet.Host
 		if host == "" {
-			host = status.PodIP
+			if region.NetType == "midolnet" {
+				host = region.GetDockerBridgeIP(pod.UID)
+			} else {
+				host = status.PodIP
+			}
 		}
 		port, err := extractPort(p.HTTPGet.Port, container)
 		if err != nil {
@@ -167,6 +172,9 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		port, err := extractPort(p.TCPSocket.Port, container)
 		if err != nil {
 			return probe.Unknown, "", err
+		}
+		if region.NetType == "midolnet" {
+			status.PodIP = region.GetDockerBridgeIP(pod.UID)
 		}
 		glog.V(4).Infof("TCP-Probe PodIP: %v, Port: %v, Timeout: %v", status.PodIP, port, timeout)
 		return pb.tcp.Probe(status.PodIP, port, timeout)

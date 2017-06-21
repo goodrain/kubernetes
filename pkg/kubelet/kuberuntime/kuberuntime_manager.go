@@ -606,7 +606,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 	if podStatus != nil {
 		podIP = podStatus.IP
 	}
-
 	// Step 4: Create a sandbox for the pod if necessary.
 	podSandboxID := podContainerChanges.SandboxID
 	if podContainerChanges.CreateSandbox && len(podContainerChanges.ContainersToStart) > 0 {
@@ -635,6 +634,12 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		// host-network, we may use a stale IP.
 		if !kubecontainer.IsHostNetworkPod(pod) {
 			// Overwrite the podIP passed in the pod status, since we just started the pod sandbox.
+			if strings.Contains(podSandboxStatus.Network.Ip, ",") {
+				ips := strings.Split(podSandboxStatus.Network.Ip, ",")
+				podSandboxStatus.Network.Ip = ips[0]
+				//cache the docker bridge ip to region
+				region.SetDockerBridgeIP(pod.UID, ips[1])
+			}
 			podIP = m.determinePodSandboxIP(pod.Namespace, pod.Name, podSandboxStatus)
 			glog.V(4).Infof("Determined the ip %q for pod %q after sandbox changed", podIP, format.Pod(pod))
 		}

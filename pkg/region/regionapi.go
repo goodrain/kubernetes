@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
 
 	"sync"
@@ -488,4 +489,34 @@ func EventLog(pod *v1.Pod, message, level string) {
 			resp.Body.Close()
 		}
 	}
+}
+
+var lock sync.Mutex
+
+var cache = make(map[types.UID]string)
+
+//SetDockerBridgeIP  暂存midonet container eth1 IP
+func SetDockerBridgeIP(uid types.UID, ip string) {
+	lock.Lock()
+	defer lock.Unlock()
+	cache[uid] = ip
+}
+
+//RemoveDockerBridgeIP 移除midonet container eth1 IP
+func RemoveDockerBridgeIP(uid types.UID) {
+	lock.Lock()
+	defer lock.Unlock()
+	if _, ok := cache[uid]; ok {
+		delete(cache, uid)
+	}
+}
+
+//GetDockerBridgeIP 获取midonet container eth1 IP
+func GetDockerBridgeIP(uid types.UID) string {
+	lock.Lock()
+	defer lock.Unlock()
+	if _, ok := cache[uid]; ok {
+		return cache[uid]
+	}
+	return ""
 }
