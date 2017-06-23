@@ -499,6 +499,7 @@ var cache = make(map[types.UID]string)
 func SetDockerBridgeIP(uid types.UID, ip string) {
 	lock.Lock()
 	defer lock.Unlock()
+	glog.V(2).Infof("set docker bridge container ip %s to cache.", ip)
 	cache[uid] = ip
 }
 
@@ -508,6 +509,7 @@ func RemoveDockerBridgeIP(uid types.UID) {
 	defer lock.Unlock()
 	if _, ok := cache[uid]; ok {
 		delete(cache, uid)
+		glog.V(2).Infof("remove pod(%s) docker bridge container ip from cache.", uid)
 	}
 }
 
