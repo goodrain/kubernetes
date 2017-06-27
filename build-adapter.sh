@@ -15,6 +15,7 @@ trap 'clean_tmp; exit' QUIT TERM EXIT
 function clean_tmp() {
   echo "clean temporary file..."
   [ -f Dockerfile.release ] && rm -rf Dockerfile.release
+  [ -f adapter/grproxy ] && rm  adapter/grproxy
 }
 
 function release(){
@@ -41,7 +42,7 @@ function release(){
 
   sed "s/__RELEASE_DESC__/${release_desc}/" adapter/Dockerfile > Dockerfile.release
 
-  docker build -t hub.goodrain.com/dc-deploy/${image_name}:${release_version} -f /adapter/Dockerfile.release adapter
+  docker build -t hub.goodrain.com/dc-deploy/${image_name}:${release_version} -f adapter/Dockerfile.release adapter
   docker push hub.goodrain.com/dc-deploy/${image_name}:${release_version}
 }
 
