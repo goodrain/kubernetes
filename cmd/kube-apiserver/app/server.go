@@ -108,7 +108,7 @@ func RunServer(config *master.Config, sharedInformers informers.SharedInformerFa
 	if err != nil {
 		return err
 	}
-
+	go m.CheckLicense(config.LicenseFile, config.LicenseType, stopCh)
 	sharedInformers.Start(stopCh)
 	return m.GenericAPIServer.PrepareRun().Run(stopCh)
 }

@@ -205,6 +205,6 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 		"after we fix all the clients that send malformed updates.")
 	// License flags:
 	fs.StringVar(&s.LicenseFile, "license-file", "", "The license gives help software copyright license")
-	fs.StringVar(&s.LicenseType, "license-type", "offline", "license type")
+	fs.StringVar(&s.LicenseType, "license-type", "online", "license type")
 
 }
