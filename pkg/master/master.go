@@ -321,6 +321,9 @@ func isReadyNodeInfo(node *v1.Node) bool {
 
 //CheckLicense licnese信息检测
 func (m *Master) CheckLicense(licenseFile, licenseType string, stopCh <-chan struct{}) {
+	//step1 wait for 10 senconds
+	time.Sleep(10 * time.Second)
+	//step2 start check license
 	tick := time.NewTicker(time.Second * 20)
 	m.doCheck(licenseFile, licenseType, true)
 	for {
@@ -424,11 +427,9 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 	}
 	nodesInfo, err := m.getAllNodeInfo()
 	if err != nil {
-		glog.Error("LICENSE验证资源错误,系统退出。如有疑问请联系客服。错误原因:获取集群资源错误")
-		if isExist {
-			os.Exit(-1)
-		}
+		return
 	}
+	//start check
 	glog.V(2).Infof("集群资源情况:内存%dGB,CPU %d核,节点%d个。", nodesInfo["memorys"], nodesInfo["cpus"], nodesInfo["nodes"])
 	//step1 check time
 	endTime, err := time.Parse("2006-01-02 15:04:05", LicenseInfo.EndTime)
