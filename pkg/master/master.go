@@ -468,6 +468,7 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 func (m *Master) getAllNodeInfo() (map[string]int64, error) {
 	nodes, err := m.NodeClient.List(metav1.ListOptions{})
 	if err != nil {
+		glog.Error("list all node info error.", err.Error())
 		return nil, err
 	}
 	nodeMap := make(map[string]int64)
