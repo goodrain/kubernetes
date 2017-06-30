@@ -100,7 +100,9 @@ func ReadLicenseFromConsole(token string, defaultLicense string) (Info, error) {
 			return info, err
 		}
 		apiInfo := struct {
-			Bean string `json:"bean"`
+			Body struct {
+				Bean string `json:"bean"`
+			}
 		}{}
 
 		err = json.Unmarshal(body, &apiInfo)
@@ -108,7 +110,7 @@ func ReadLicenseFromConsole(token string, defaultLicense string) (Info, error) {
 			return info, err
 		}
 		//step2 decryption info
-		infoData, err := decrypt(key, apiInfo.Bean)
+		infoData, err := decrypt(key, apiInfo.Body.Bean)
 		if err != nil {
 			return info, errors.New("LICENSE解密发生错误。")
 		}
