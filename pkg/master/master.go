@@ -425,12 +425,6 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 			}
 		}
 	}
-	nodesInfo, err := m.getAllNodeInfo()
-	if err != nil {
-		return
-	}
-	//start check
-	glog.V(2).Infof("集群资源情况:内存%dGB,CPU %d核,节点%d个。", nodesInfo["memorys"], nodesInfo["cpus"], nodesInfo["nodes"])
 	//step1 check time
 	endTime, err := time.Parse("2006-01-02 15:04:05", LicenseInfo.EndTime)
 	if err != nil {
@@ -440,13 +434,23 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 			os.Exit(-1)
 		}
 	}
-	if endTime.After(time.Now()) {
-		glog.Error("LICENSE过期时间已到，集群退出.请联系客服", err.Error())
+
+	if endTime.Before(time.Now()) {
+		glog.Error("LICENSE过期时间已到，集群退出.请联系客服")
 		m.ExitAllNode()
 		if isExist {
 			os.Exit(-1)
 		}
 	}
+	if time.Now().After(endTime.AddDate(0, -1, 0)) {
+		glog.Errorf("你的LICENSE将于%s过期.为了不影响你的使用，请与我们客服联系。", LicenseInfo.EndTime)
+	}
+	nodesInfo, err := m.getAllNodeInfo()
+	if err != nil || nodesInfo == nil {
+		return
+	}
+	//start check resources
+	glog.V(2).Infof("集群资源情况:内存%dGB,CPU %d核,节点%d个。", nodesInfo["memorys"], nodesInfo["cpus"], nodesInfo["nodes"])
 
 	//step2 check node number
 	if nodesInfo["nodes"] > LicenseInfo.Node {
