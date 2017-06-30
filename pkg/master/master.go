@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"reflect"
 	"strconv"
 	"time"
@@ -325,7 +324,7 @@ func (m *Master) CheckLicense(licenseFile, licenseType string, stopCh <-chan str
 	time.Sleep(10 * time.Second)
 	//step2 start check license
 	tick := time.NewTicker(time.Second * 20)
-	m.doCheck(licenseFile, licenseType, true)
+	m.doCheck(licenseFile, licenseType)
 	for {
 		select {
 		case <-stopCh:
@@ -334,7 +333,7 @@ func (m *Master) CheckLicense(licenseFile, licenseType string, stopCh <-chan str
 
 		}
 		glog.V(2).Info("Start check license info.")
-		m.doCheck(licenseFile, licenseType, false)
+		m.doCheck(licenseFile, licenseType)
 	}
 }
 
@@ -405,24 +404,20 @@ func (m *Master) ExitMinNode(tag string) {
 	}
 }
 
-func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
+func (m *Master) doCheck(licenseFile, licenseType string) {
 	var LicenseInfo license.Info
 	var err error
 	if licenseType == "online" {
 		LicenseInfo, err = license.ReadLicenseFromConsole("a905b993b5035122abe7be3a5c13ce2e55047981", licenseFile)
 		if err != nil {
 			glog.Error("在线获取LICENSE获取错误,系统退出。如有疑问请联系客服。错误原因:" + err.Error())
-			if isExist {
-				os.Exit(-1)
-			}
+			return
 		}
 	} else {
 		LicenseInfo, err = license.ReadLicenseFromFile(licenseFile)
 		if err != nil {
 			glog.Error("在线获取LICENSE获取错误,系统退出。如有疑问请联系客服。错误原因:" + err.Error())
-			if isExist {
-				os.Exit(-1)
-			}
+			return
 		}
 	}
 	//step1 check time
@@ -430,17 +425,13 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 	if err != nil {
 		glog.Error("解析LICENSE过期时间错误，集群退出.", err.Error())
 		m.ExitAllNode()
-		if isExist {
-			os.Exit(-1)
-		}
+		return
 	}
 
 	if endTime.Before(time.Now()) {
 		glog.Error("LICENSE过期时间已到，集群退出.请联系客服")
 		m.ExitAllNode()
-		if isExist {
-			os.Exit(-1)
-		}
+		return
 	}
 	if time.Now().After(endTime.AddDate(0, -1, 0)) {
 		glog.Errorf("你的LICENSE将于%s过期.为了不影响你的使用，请与我们客服联系。", LicenseInfo.EndTime)
@@ -456,17 +447,20 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 	if nodesInfo["nodes"] > LicenseInfo.Node {
 		glog.Error("集群节点数量超过授权值，下线节点.请联系客服")
 		m.ExitMinNode("node")
+		return
 	}
 
 	//step3 check memory
 	if nodesInfo["memorys"] > LicenseInfo.Memory {
 		glog.Error("集群内存总数超过授权值，下线节点.请联系客服")
 		m.ExitMinNode("memory")
+		return
 	}
 	//step4 check cpu
 	if nodesInfo["cpus"] > LicenseInfo.CPU {
 		glog.Error("集群CPU核总数超过授权值，下线节点.请联系客服")
 		m.ExitMinNode("cpu")
+		return
 	}
 }
 
