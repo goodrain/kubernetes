@@ -204,7 +204,7 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 		"e.g., setting empty UID in update request to its existing value. This flag can be turned off "+
 		"after we fix all the clients that send malformed updates.")
 	// License flags:
-	fs.StringVar(&s.LicenseFile, "license-file", "", "The license gives help software copyright license")
+	fs.StringVar(&s.LicenseFile, "license-file", "/etc/goodrain/LICENSE", "The license gives help software copyright license")
 	fs.StringVar(&s.LicenseType, "license-type", "online", "license type")
 
 }

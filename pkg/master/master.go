@@ -406,7 +406,7 @@ func (m *Master) doCheck(licenseFile, licenseType string, isExist bool) {
 	var LicenseInfo license.Info
 	var err error
 	if licenseType == "online" {
-		LicenseInfo, err = license.ReadLicenseFromConsole("http://console.goodrain.me/api/license", "a905b993b5035122abe7be3a5c13ce2e55047981")
+		LicenseInfo, err = license.ReadLicenseFromConsole("a905b993b5035122abe7be3a5c13ce2e55047981", licenseFile)
 		if err != nil {
 			glog.Error("在线获取LICENSE获取错误,系统退出。如有疑问请联系客服。错误原因:" + err.Error())
 			if isExist {

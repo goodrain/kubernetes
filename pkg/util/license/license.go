@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 //Info license 信息
@@ -75,9 +77,9 @@ func ReadLicenseFromFile(licenseFile string) (Info, error) {
 }
 
 //ReadLicenseFromConsole 从控制台api获取license
-func ReadLicenseFromConsole(url string, token string) (Info, error) {
+func ReadLicenseFromConsole(token string, defaultLicense string) (Info, error) {
 	var info Info
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", "http://console.goodrain.me/api/license", nil)
 	if err != nil {
 		return info, err
 	}
@@ -88,7 +90,8 @@ func ReadLicenseFromConsole(url string, token string) (Info, error) {
 	http.DefaultClient.Timeout = time.Second * 5
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return info, err
+		glog.Info("控制台读取授权失败，使用默认授权。")
+		return ReadLicenseFromFile(defaultLicense)
 	}
 	if res != nil {
 		defer res.Body.Close()
