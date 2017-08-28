@@ -602,7 +602,7 @@ type PodSandboxNetworkStatus struct {
 	// IP address of the PodSandbox.
 	Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
 	// IP address of the PodSandbox eth1
-	NetIP string `protobuf:"bytes,1,opt,name=netIP,proto3" json:"ip,omitempty"`
+	NetIP string `protobuf:"bytes,1,opt,name=netIP,proto3" json:"netIP,omitempty"`
 }
 
 func (m *PodSandboxNetworkStatus) Reset()                    { *m = PodSandboxNetworkStatus{} }

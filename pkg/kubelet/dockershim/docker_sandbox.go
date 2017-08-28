@@ -301,8 +301,9 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 	if err != nil {
 		return nil, err
 	}
-	glog.V(2).Infof("GET docker sandbox status netip is %s", r.NetworkSettings.IPAddress)
+
 	network := &runtimeapi.PodSandboxNetworkStatus{Ip: IP, NetIP: r.NetworkSettings.IPAddress}
+	glog.V(2).Infof("GET docker sandbox status netip is %s", network.NetIP)
 	netNS := getNetworkNamespace(r)
 	hostNetwork := sharesHostNetwork(r)
 

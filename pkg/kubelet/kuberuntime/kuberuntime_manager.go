@@ -880,6 +880,7 @@ func (m *kubeGenericRuntimeManager) GetPodStatus(uid kubetypes.UID, name, namesp
 		// Only get pod IP from latest sandbox
 		if idx == 0 && podSandboxStatus.State == runtimeapi.PodSandboxState_SANDBOX_READY {
 			podIP = m.determinePodSandboxIP(namespace, name, podSandboxStatus)
+			glog.V(2).Infof("GetPodStatus pod IP is %s,pod netip is %s", podIP, podSandboxStatus.Network.NetIP)
 		}
 	}
 
