@@ -18,7 +18,6 @@ package dockershim
 
 import (
 	"fmt"
-	"strings"
 
 	dockertypes "github.com/docker/engine-api/types"
 	dockercontainer "github.com/docker/engine-api/types/container"
@@ -280,12 +279,6 @@ func (ds *dockerService) getIP(sandbox *dockertypes.ContainerJSON) (string, erro
 
 // PodSandboxStatus returns the status of the PodSandbox.
 func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodSandboxStatus, error) {
-	var podUID string
-	if strings.Contains(podSandboxID, ",") {
-		ids := strings.Split(podSandboxID, ",")
-		podSandboxID = ids[0]
-		podUID = ids[1]
-	}
 	// Inspect the container.
 	r, err := ds.client.InspectContainer(podSandboxID)
 	if err != nil {
@@ -304,10 +297,6 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 	if r.State.Running {
 		state = runtimeapi.PodSandboxState_SANDBOX_READY
 	}
-	// dockerBridgeIP := r.NetworkSettings.IPAddress
-	// if podUID != "" {
-	// 	region.SetDockerBridgeIP(apimachinery.UID(podUID), dockerBridgeIP)
-	// }
 	IP, err := ds.getIP(r)
 	if err != nil {
 		return nil, err

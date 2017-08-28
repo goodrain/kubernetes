@@ -623,7 +623,7 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 		}
 		glog.V(4).Infof("Created PodSandbox %q for pod %q", podSandboxID, format.Pod(pod))
 
-		podSandboxStatus, err := m.runtimeService.PodSandboxStatus(podSandboxID + "," + string(pod.UID))
+		podSandboxStatus, err := m.runtimeService.PodSandboxStatus(podSandboxID)
 		if err != nil {
 			glog.Errorf("Failed to get pod sandbox status: %v; Skipping pod %q", err, format.Pod(pod))
 			result.Fail(err)
