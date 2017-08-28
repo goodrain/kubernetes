@@ -602,7 +602,7 @@ type PodSandboxNetworkStatus struct {
 	// IP address of the PodSandbox.
 	Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
 	// IP address of the PodSandbox eth1
-	NetIP string `protobuf:"bytes,1,opt,name=netIP,proto3" json:"netIP,omitempty"`
+	NetIP string `protobuf:"bytes,2,opt,name=netIP,proto3" json:"netIP,omitempty"`
 }
 
 func (m *PodSandboxNetworkStatus) Reset()                    { *m = PodSandboxNetworkStatus{} }
@@ -3585,6 +3585,12 @@ func (m *PodSandboxNetworkStatus) MarshalTo(data []byte) (int, error) {
 		i = encodeVarintApi(data, i, uint64(len(m.Ip)))
 		i += copy(data[i:], m.Ip)
 	}
+	if len(m.NetIP) > 0 {
+		data[i] = 0x12
+		i++
+		i = encodeVarintApi(data, i, uint64(len(m.NetIP)))
+		i += copy(data[i:], m.NetIP)
+	}
 	return i, nil
 }
 
@@ -6399,6 +6405,9 @@ func (m *PodSandboxNetworkStatus) Size() (n int) {
 	l = len(m.Ip)
 	if l > 0 {
 		n += 1 + l + sovApi(uint64(l))
+	}
+	if len(m.NetIP) > 0 {
+		n += 1 + len(m.NetIP) + sovApi(uint64(len(m.NetIP)))
 	}
 	return n
 }
