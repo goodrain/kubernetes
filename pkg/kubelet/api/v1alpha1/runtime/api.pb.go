@@ -7698,6 +7698,7 @@ func (this *PodSandboxNetworkStatus) String() string {
 	}
 	s := strings.Join([]string{`&PodSandboxNetworkStatus{`,
 		`Ip:` + fmt.Sprintf("%v", this.Ip) + `,`,
+		`NetIP:` + fmt.Sprintf("%v", this.NetIP) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -10883,6 +10884,35 @@ func (m *PodSandboxNetworkStatus) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Ip = string(data[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NetIP", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowApi
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthApi
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.NetIP = string(data[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
