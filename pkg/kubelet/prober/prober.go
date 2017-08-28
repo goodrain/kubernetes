@@ -40,6 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/exec"
 
 	"github.com/golang/glog"
+	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 	"k8s.io/kubernetes/pkg/region"
 )
 
@@ -161,8 +162,10 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 				if podStatus != nil && podStatus.SandboxStatuses != nil {
 					for i := range podStatus.SandboxStatuses {
 						s := podStatus.SandboxStatuses[i]
-						glog.V(2).Infof("Get a container eth1 ipaddress is %s ", s.Network.NetIP)
-						host = s.Network.NetIP
+						if i == 0 && s.State == runtimeapi.PodSandboxState_SANDBOX_READY {
+							glog.V(2).Infof("Get a container eth1 ipaddress is %s ", s.Network.NetIP)
+							host = s.Network.NetIP
+						}
 					}
 				}
 			} else {
@@ -193,8 +196,10 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 			if podStatus != nil && podStatus.SandboxStatuses != nil {
 				for i := range podStatus.SandboxStatuses {
 					s := podStatus.SandboxStatuses[i]
-					glog.V(2).Infof("Get a container eth1 ipaddress is %s ", s.Network.NetIP)
-					status.PodIP = s.Network.NetIP
+					if i == 0 && s.State == runtimeapi.PodSandboxState_SANDBOX_READY {
+						glog.V(2).Infof("Get a container eth1 ipaddress is %s ", s.Network.NetIP)
+						status.PodIP = s.Network.NetIP
+					}
 				}
 			}
 		}
