@@ -539,7 +539,6 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	// features, replace with networkHost.
 	var nl *noOpLegacyHost
 	pluginSettings.LegacyRuntimeHost = nl
-
 	// rktnetes cannot be run with CRI.
 	if kubeCfg.ContainerRuntime != "rkt" && kubeCfg.EnableCRI {
 		// kubelet defers to the runtime shim to setup networking. Setting
@@ -714,7 +713,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	klet.statusManager = status.NewManager(klet.kubeClient, klet.podManager, klet)
 
 	klet.probeManager = prober.NewManager(
-		klet.containerRuntime,
+		klet.dockerClient,
 		klet.statusManager,
 		klet.livenessManager,
 		klet.runner,

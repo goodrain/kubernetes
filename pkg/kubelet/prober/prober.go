@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/events"
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
@@ -51,7 +52,7 @@ type prober struct {
 	http       httprobe.HTTPProber
 	tcp        tcprobe.TCPProber
 	runner     kubecontainer.ContainerCommandRunner
-	runtime    kubecontainer.Runtime
+	dif        dockertools.DockerInterface
 	refManager *kubecontainer.RefManager
 	recorder   record.EventRecorder
 }
@@ -59,13 +60,14 @@ type prober struct {
 // NewProber creates a Prober, it takes a command runner and
 // several container info managers.
 func newProber(
+	dif dockertools.DockerInterface,
 	runtime kubecontainer.Runtime,
 	runner kubecontainer.ContainerCommandRunner,
 	refManager *kubecontainer.RefManager,
 	recorder record.EventRecorder) *prober {
 
 	return &prober{
-		runtime:    runtime,
+		dif:        dif,
 		exec:       execprobe.New(),
 		http:       httprobe.New(),
 		tcp:        tcprobe.New(),
@@ -154,14 +156,12 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		host := p.HTTPGet.Host
 		if host == "" {
 			if region.NetType == "midolnet" || region.NetType == "midonet" {
-				podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
+				r, err := pb.dif.InspectContainer(containerID.ID)
 				if err != nil {
-					glog.Errorf("HTTP-GET-Probe Pod: %v, Container: %v, get host ip error. %v", pod, container, err.Error())
-				} else {
-					for i := range podStatus.SandboxStatuses {
-						podboxStatus := podStatus.SandboxStatuses[i]
-						p.HTTPGet.Host = podboxStatus.Network.NetIP
-					}
+					glog.Errorf("get container eth1 ipaddress error. %v", err.Error())
+				}
+				if r != nil && r.NetworkSettings != nil {
+					p.HTTPGet.Host = r.NetworkSettings.IPAddress
 				}
 			} else {
 				host = status.PodIP
@@ -184,14 +184,12 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 			return probe.Unknown, "", err
 		}
 		if region.NetType == "midolnet" || region.NetType == "midonet" {
-			podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
+			r, err := pb.dif.InspectContainer(containerID.ID)
 			if err != nil {
-				glog.Errorf("HTTP-GET-Probe Pod: %v, Container: %v, get host ip error. %v", pod, container, err.Error())
-			} else {
-				for i := range podStatus.SandboxStatuses {
-					podboxStatus := podStatus.SandboxStatuses[i]
-					status.PodIP = podboxStatus.Network.NetIP
-				}
+				glog.Errorf("get container eth1 ipaddress error. %v", err.Error())
+			}
+			if r != nil && r.NetworkSettings != nil {
+				status.PodIP = r.NetworkSettings.IPAddress
 			}
 		}
 		glog.V(2).Infof("TCP-Probe PodIP: %v, Port: %v, Timeout: %v", status.PodIP, port, timeout)

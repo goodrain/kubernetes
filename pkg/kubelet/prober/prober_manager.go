@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/v1"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
+	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/prober/results"
 	"k8s.io/kubernetes/pkg/kubelet/status"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
@@ -77,14 +78,14 @@ type manager struct {
 }
 
 func NewManager(
-	runtime kubecontainer.Runtime,
+	dif dockertools.DockerInterface,
 	statusManager status.Manager,
 	livenessManager results.Manager,
 	runner kubecontainer.ContainerCommandRunner,
 	refManager *kubecontainer.RefManager,
 	recorder record.EventRecorder) Manager {
 
-	prober := newProber(runtime, runner, refManager, recorder)
+	prober := newProber(dif, runner, refManager, recorder)
 	readinessManager := results.NewManager()
 	return &manager{
 		statusManager:    statusManager,
