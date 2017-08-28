@@ -61,7 +61,6 @@ type prober struct {
 // several container info managers.
 func newProber(
 	dif dockertools.DockerInterface,
-	runtime kubecontainer.Runtime,
 	runner kubecontainer.ContainerCommandRunner,
 	refManager *kubecontainer.RefManager,
 	recorder record.EventRecorder) *prober {
