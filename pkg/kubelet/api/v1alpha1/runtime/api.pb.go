@@ -601,6 +601,8 @@ func (*PodSandboxStatusRequest) Descriptor() ([]byte, []int) { return fileDescri
 type PodSandboxNetworkStatus struct {
 	// IP address of the PodSandbox.
 	Ip string `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+	// IP address of the PodSandbox eth1
+	NetIP string `protobuf:"bytes,1,opt,name=netIP,proto3" json:"ip,omitempty"`
 }
 
 func (m *PodSandboxNetworkStatus) Reset()                    { *m = PodSandboxNetworkStatus{} }

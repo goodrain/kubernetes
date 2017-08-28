@@ -496,29 +496,29 @@ var lock sync.Mutex
 var cache = make(map[types.UID]string)
 
 //SetDockerBridgeIP  暂存midonet container eth1 IP
-func SetDockerBridgeIP(uid types.UID, ip string) {
-	lock.Lock()
-	defer lock.Unlock()
-	glog.V(2).Infof("set docker bridge container ip %s to cache.", ip)
-	cache[uid] = ip
-}
+// func SetDockerBridgeIP(uid types.UID, ip string) {
+// 	lock.Lock()
+// 	defer lock.Unlock()
+// 	glog.V(2).Infof("set docker bridge container ip %s to cache.", ip)
+// 	cache[uid] = ip
+// }
 
 //RemoveDockerBridgeIP 移除midonet container eth1 IP
-func RemoveDockerBridgeIP(uid types.UID) {
-	lock.Lock()
-	defer lock.Unlock()
-	if _, ok := cache[uid]; ok {
-		delete(cache, uid)
-		glog.V(2).Infof("remove pod(%s) docker bridge container ip from cache.", uid)
-	}
-}
+// func RemoveDockerBridgeIP(uid types.UID) {
+// 	lock.Lock()
+// 	defer lock.Unlock()
+// 	if _, ok := cache[uid]; ok {
+// 		delete(cache, uid)
+// 		glog.V(2).Infof("remove pod(%s) docker bridge container ip from cache.", uid)
+// 	}
+// }
 
 //GetDockerBridgeIP 获取midonet container eth1 IP
-func GetDockerBridgeIP(uid types.UID) string {
-	lock.Lock()
-	defer lock.Unlock()
-	if _, ok := cache[uid]; ok {
-		return cache[uid]
-	}
-	return ""
-}
+// func GetDockerBridgeIP(uid types.UID) string {
+// 	lock.Lock()
+// 	defer lock.Unlock()
+// 	if _, ok := cache[uid]; ok {
+// 		return cache[uid]
+// 	}
+// 	return ""
+// }

@@ -77,13 +77,14 @@ type manager struct {
 }
 
 func NewManager(
+	runtime kubecontainer.Runtime,
 	statusManager status.Manager,
 	livenessManager results.Manager,
 	runner kubecontainer.ContainerCommandRunner,
 	refManager *kubecontainer.RefManager,
 	recorder record.EventRecorder) Manager {
 
-	prober := newProber(runner, refManager, recorder)
+	prober := newProber(runtime, runner, refManager, recorder)
 	readinessManager := results.NewManager()
 	return &manager{
 		statusManager:    statusManager,

@@ -25,7 +25,6 @@ import (
 	dockerfilters "github.com/docker/engine-api/types/filters"
 	"github.com/golang/glog"
 
-	apimachinery "k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/api/v1alpha1/runtime"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
@@ -33,7 +32,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/dockertools"
 	"k8s.io/kubernetes/pkg/kubelet/qos"
 	"k8s.io/kubernetes/pkg/kubelet/types"
-	"k8s.io/kubernetes/pkg/region"
 )
 
 const (
@@ -306,15 +304,15 @@ func (ds *dockerService) PodSandboxStatus(podSandboxID string) (*runtimeapi.PodS
 	if r.State.Running {
 		state = runtimeapi.PodSandboxState_SANDBOX_READY
 	}
-	dockerBridgeIP := r.NetworkSettings.IPAddress
-	if podUID != "" {
-		region.SetDockerBridgeIP(apimachinery.UID(podUID), dockerBridgeIP)
-	}
+	// dockerBridgeIP := r.NetworkSettings.IPAddress
+	// if podUID != "" {
+	// 	region.SetDockerBridgeIP(apimachinery.UID(podUID), dockerBridgeIP)
+	// }
 	IP, err := ds.getIP(r)
 	if err != nil {
 		return nil, err
 	}
-	network := &runtimeapi.PodSandboxNetworkStatus{Ip: IP}
+	network := &runtimeapi.PodSandboxNetworkStatus{Ip: IP, NetIP: r.NetworkSettings.IPAddress}
 	netNS := getNetworkNamespace(r)
 	hostNetwork := sharesHostNetwork(r)
 

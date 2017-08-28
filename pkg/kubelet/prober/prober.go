@@ -47,11 +47,11 @@ const maxProbeRetries = 3
 
 // Prober helps to check the liveness/readiness of a container.
 type prober struct {
-	exec   execprobe.ExecProber
-	http   httprobe.HTTPProber
-	tcp    tcprobe.TCPProber
-	runner kubecontainer.ContainerCommandRunner
-
+	exec       execprobe.ExecProber
+	http       httprobe.HTTPProber
+	tcp        tcprobe.TCPProber
+	runner     kubecontainer.ContainerCommandRunner
+	runtime    kubecontainer.Runtime
 	refManager *kubecontainer.RefManager
 	recorder   record.EventRecorder
 }
@@ -59,11 +59,13 @@ type prober struct {
 // NewProber creates a Prober, it takes a command runner and
 // several container info managers.
 func newProber(
+	runtime kubecontainer.Runtime,
 	runner kubecontainer.ContainerCommandRunner,
 	refManager *kubecontainer.RefManager,
 	recorder record.EventRecorder) *prober {
 
 	return &prober{
+		runtime:    runtime,
 		exec:       execprobe.New(),
 		http:       httprobe.New(),
 		tcp:        tcprobe.New(),
@@ -151,8 +153,16 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		scheme := strings.ToLower(string(p.HTTPGet.Scheme))
 		host := p.HTTPGet.Host
 		if host == "" {
-			if region.NetType == "midolnet" {
-				host = region.GetDockerBridgeIP(pod.UID)
+			if region.NetType == "midolnet" || region.NetType == "midonet" {
+				podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
+				if err != nil {
+					glog.Errorf("HTTP-GET-Probe Pod: %v, Container: %v, get host ip error. %v", pod, container, err.Error())
+				} else {
+					for i := range podStatus.SandboxStatuses {
+						podboxStatus := podStatus.SandboxStatuses[i]
+						p.HTTPGet.Host = podboxStatus.Network.NetIP
+					}
+				}
 			} else {
 				host = status.PodIP
 			}
@@ -173,10 +183,18 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		if err != nil {
 			return probe.Unknown, "", err
 		}
-		if region.NetType == "midolnet" {
-			status.PodIP = region.GetDockerBridgeIP(pod.UID)
+		if region.NetType == "midolnet" || region.NetType == "midonet" {
+			podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
+			if err != nil {
+				glog.Errorf("HTTP-GET-Probe Pod: %v, Container: %v, get host ip error. %v", pod, container, err.Error())
+			} else {
+				for i := range podStatus.SandboxStatuses {
+					podboxStatus := podStatus.SandboxStatuses[i]
+					status.PodIP = podboxStatus.Network.NetIP
+				}
+			}
 		}
-		glog.V(4).Infof("TCP-Probe PodIP: %v, Port: %v, Timeout: %v", status.PodIP, port, timeout)
+		glog.V(2).Infof("TCP-Probe PodIP: %v, Port: %v, Timeout: %v", status.PodIP, port, timeout)
 		return pb.tcp.Probe(status.PodIP, port, timeout)
 	}
 	glog.Warningf("Failed to find probe builder for container: %v", container)
