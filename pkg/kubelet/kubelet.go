@@ -713,7 +713,7 @@ func NewMainKubelet(kubeCfg *componentconfig.KubeletConfiguration, kubeDeps *Kub
 	klet.statusManager = status.NewManager(klet.kubeClient, klet.podManager, klet)
 
 	klet.probeManager = prober.NewManager(
-		klet.dockerClient,
+		klet.containerRuntime,
 		klet.statusManager,
 		klet.livenessManager,
 		klet.runner,
