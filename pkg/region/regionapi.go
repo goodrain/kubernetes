@@ -321,27 +321,27 @@ func DrainPod(podName string) (int, error) {
 }
 
 //Bindingips binding ip
-func Bindingips(pod *v1.Pod, HostIP string) {
-	eventID := GetEventID(pod)
-	var para = fmt.Sprintf(`{"host_ip":"%s","event_id":"%s"}`, HostIP, eventID)
-	var jsonStr = []byte(para)
-	var url = configMap["Region_service_api"] + "lifecycle/bindings/" + pod.Name
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		EventLog(pod, "POD绑定机器IP调用错误。", "error")
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
+// func Bindingips(pod *v1.Pod, HostIP string) {
+// 	eventID := GetEventID(pod)
+// 	var para = fmt.Sprintf(`{"host_ip":"%s","event_id":"%s"}`, HostIP, eventID)
+// 	var jsonStr = []byte(para)
+// 	var url = configMap["Region_service_api"] + "lifecycle/bindings/" + pod.Name
+// 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
+// 	req.Header.Set("Content-Type", "application/json")
+// 	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
+// 	client := &http.Client{
+// 		Timeout: HTTPTimeOut,
+// 	}
+// 	resp, err := client.Do(req)
+// 	if err != nil {
+// 		EventLog(pod, "POD绑定机器IP调用错误。", "error")
+// 	} else {
+// 		if resp.Body != nil {
+// 			resp.Body.Close()
+// 		}
 
-	}
-}
+// 	}
+// }
 
 //UnCreatePod uncreate pod
 func UnCreatePod(namespace, name string) {

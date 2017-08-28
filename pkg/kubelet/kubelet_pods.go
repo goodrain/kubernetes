@@ -135,6 +135,9 @@ func makeMounts(pod *v1.Pod, podDir string, container *v1.Container, hostName, h
 		if err != nil {
 			return nil, err
 		}
+		if mount.SubPath == "PODNAME" {
+			mount.SubPath = pod.Name
+		}
 		if mount.SubPath != "" {
 			fileinfo, err := os.Lstat(hostPath)
 			if err != nil {
