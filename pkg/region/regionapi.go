@@ -25,12 +25,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/kubernetes/pkg/api/v1"
 
 	"sync"
@@ -50,8 +48,14 @@ var HTTPTimeOut = time.Duration(25 * time.Second)
 
 var configMap map[string]string
 
+var eventLogServers = []string{"http://127.0.0.1:6363"}
+
 func init() {
 	configMap = make(map[string]string)
+	servers := GetEventLogInstance()
+	if servers != nil && len(servers) > 0 {
+		eventLogServers = servers
+	}
 }
 
 //ParseConfig 解析配置文件
@@ -210,90 +214,6 @@ func parseJSON(body []byte) map[string]string {
 	return dataMap
 }
 
-//FetchContainerIP 查找容器ip.midonet查找eth1(兼容旧版服务时使用，新版cni midonet 使用eth0)
-func FetchContainerIP(pid string, processID int) string {
-	var netip = ""
-	if NetType == "midolnet" {
-		if pid != "" {
-			command := "ip netns exec " + pid + " ifconfig eth1 | head -n 2 | cut -d: -f2 | awk '{ print $1}' | tail -n 1"
-			out, err := exec.Command("/bin/sh", "-c", command).Output()
-			if err != nil {
-				glog.Errorf("FetchContainerIP is failure")
-				out, err = exec.Command("/bin/sh", "-c", command).Output()
-				if err != nil {
-					return netip
-				}
-			}
-			str := fmt.Sprintf("%s", out)
-			netip = strings.Replace(str, "\n", "", -1)
-		}
-	} else {
-		if processID > 0 {
-			extractIPCmd := fmt.Sprintf("ip -4 addr show %s | grep inet | awk -F\" \" '{print $2}' | cut -d '/' -f1", "eth0")
-			args := []string{"-t", fmt.Sprintf("%d", processID), "-n", "--", "bash", "-c", extractIPCmd}
-			command := exec.Command("nsenter", args...)
-			out, err := command.CombinedOutput()
-			if err == nil {
-				str := fmt.Sprintf("%s", out)
-				netip = strings.Replace(str, "\n", "", -1)
-			}
-		} else {
-			netip = "1.1.1.1"
-		}
-	}
-	return netip
-}
-
-//StopServicePod stop service
-func StopServicePod(serviceID string) string {
-	var result = ""
-	var jsonStr = []byte("{}")
-	var url = configMap["Region_service_api"] + "lifecycle/" + serviceID + "/stop-running/"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("StopServicePod error serviceID:%s error:%s", serviceID, err.Error())
-	} else {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			glog.Errorf("StopServicePod Read response body error.%s,"+string(body), err.Error())
-		}
-		result = "ok"
-	}
-	return result
-}
-
-//StopServicePodByReplicaID stop service
-func StopServicePodByReplicaID(replicaID, eventID string) string {
-	var result = ""
-	var jsonStr = []byte(`{"event_id":"` + eventID + `"}`)
-	var url = configMap["Region_service_api"] + "lifecycle/" + replicaID + "/stop-rc-running/"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("StopServicePodByReplicaID error replicaID:%s error:%s", replicaID, err.Error())
-	} else {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			glog.Errorf("StopServicePodByReplicaID Read response body error.%s,"+string(body), err.Error())
-		}
-		result = "ok"
-	}
-	return result
-}
-
 //DrainPod drain pod
 func DrainPod(podName string) (int, error) {
 	var url = configMap["Region_service_api"] + "lifecycle/pods/" + podName
@@ -318,115 +238,6 @@ func DrainPod(podName string) (int, error) {
 	}
 	dataMap := parseJSON(body)
 	return strconv.Atoi(dataMap["sleep"])
-}
-
-//Bindingips binding ip
-// func Bindingips(pod *v1.Pod, HostIP string) {
-// 	eventID := GetEventID(pod)
-// 	var para = fmt.Sprintf(`{"host_ip":"%s","event_id":"%s"}`, HostIP, eventID)
-// 	var jsonStr = []byte(para)
-// 	var url = configMap["Region_service_api"] + "lifecycle/bindings/" + pod.Name
-// 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-// 	req.Header.Set("Content-Type", "application/json")
-// 	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-// 	client := &http.Client{
-// 		Timeout: HTTPTimeOut,
-// 	}
-// 	resp, err := client.Do(req)
-// 	if err != nil {
-// 		EventLog(pod, "POD绑定机器IP调用错误。", "error")
-// 	} else {
-// 		if resp.Body != nil {
-// 			resp.Body.Close()
-// 		}
-
-// 	}
-// }
-
-//UnCreatePod uncreate pod
-func UnCreatePod(namespace, name string) {
-	var para = "{\"tenant_id\":\"" + namespace + "\"}"
-	var jsonStr = []byte(para)
-
-	var url = configMap["Region_service_api"] + "lifecycle/uncreatepod/" + name
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("UnCreatePod name:%s error %s", name, err.Error())
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-	}
-}
-
-//NotFoundPod not found pod
-func NotFoundPod(namespace, name string) {
-	var para = "{\"tenant_id\":\"" + namespace + "\"}"
-	var jsonStr = []byte(para)
-
-	var url = configMap["Region_service_api"] + "lifecycle/notfoundpod/" + name
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("NotFoundPod name:%s error %s", name, err.Error())
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-	}
-}
-
-// CreateErrorRc error rc
-func CreateErrorRc(tenantID, newRCID, oldRCID string) {
-	var para = "{\"tenant_id\":\"" + tenantID + "\",\"new_rc_id\":\"" + newRCID + "\",\"old_rc_id\":\"" + oldRCID + "\"}"
-	var jsonStr = []byte(para)
-	url := configMap["Region_service_api"] + "lifecycle/error-rc"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("CreateErrorRc newRCID:%s oldRCID:%s, error %s", newRCID, oldRCID, err.Error())
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-	}
-
-}
-
-//DownK8sNode 下线节点
-func DownK8sNode(hostIP string) {
-	var jsonStr = []byte("{}")
-	url := configMap["Region_service_api"] + "k8snode/" + hostIP
-	req, err := http.NewRequest("DELETE", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("DownK8sNode hostIP:%s, error %s", hostIP, err.Error())
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
-		}
-	}
 }
 
 //NotifyService 通知服务
@@ -474,51 +285,66 @@ func EventLog(pod *v1.Pod, message, level string) {
 	eventID := GetEventID(pod)
 	var para = "{\"event_id\":\"" + eventID + "\",\"message\":\"" + message + "\",\"time\":\"" + time.Now().Format(time.RFC3339) + "\",\"level\":\"" + level + "\"}"
 	var jsonStr = []byte(para)
-	url := configMap["Region_service_api"] + "lifecycle/event_log"
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Error("Post event log to region error", err.Error())
-	} else {
-		if resp.Body != nil {
-			resp.Body.Close()
+	for _, add := range eventLogServers {
+		url := add + "/event_push"
+		if !strings.HasPrefix(url, "http") {
+			url = "http://" + url
 		}
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
+		if err != nil {
+			glog.Error("new send event message request error.", err.Error())
+			continue
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			glog.Error("Send event message to server error.", err.Error())
+			continue
+		}
+		if res != nil && res.StatusCode != 200 {
+			rb, _ := ioutil.ReadAll(res.Body)
+			glog.Error("Post EventMessage Error:" + string(rb))
+		}
+		if res != nil && res.Body != nil {
+			res.Body.Close()
+		}
+		if res != nil && res.StatusCode == 200 {
+			break
+		}
+		continue
 	}
 }
 
-var lock sync.Mutex
-
-var cache = make(map[types.UID]string)
-
-//SetDockerBridgeIP  暂存midonet container eth1 IP
-// func SetDockerBridgeIP(uid types.UID, ip string) {
-// 	lock.Lock()
-// 	defer lock.Unlock()
-// 	glog.V(2).Infof("set docker bridge container ip %s to cache.", ip)
-// 	cache[uid] = ip
-// }
-
-//RemoveDockerBridgeIP 移除midonet container eth1 IP
-// func RemoveDockerBridgeIP(uid types.UID) {
-// 	lock.Lock()
-// 	defer lock.Unlock()
-// 	if _, ok := cache[uid]; ok {
-// 		delete(cache, uid)
-// 		glog.V(2).Infof("remove pod(%s) docker bridge container ip from cache.", uid)
-// 	}
-// }
-
-//GetDockerBridgeIP 获取midonet container eth1 IP
-// func GetDockerBridgeIP(uid types.UID) string {
-// 	lock.Lock()
-// 	defer lock.Unlock()
-// 	if _, ok := cache[uid]; ok {
-// 		return cache[uid]
-// 	}
-// 	return ""
-// }
+//GetEventLogInstance 获取EventLogInstance
+func GetEventLogInstance() []string {
+	var clusterAddress []string
+	res, err := http.DefaultClient.Get("http://127.0.0.1:8888/v1/etcd/event-log/instances")
+	if err != nil {
+		glog.Errorf("Error get docker log instance from region api: %v", err)
+		return nil
+	}
+	var instances = struct {
+		Data struct {
+			Instance []struct {
+				HostIP  string
+				WebPort int
+			} `json:"instance"`
+		} `json:"data"`
+		OK bool `json:"ok"`
+	}{}
+	if res != nil && res.Body != nil {
+		defer res.Body.Close()
+		err = json.NewDecoder(res.Body).Decode(&instances)
+		if err != nil {
+			glog.Errorf("Error Decode instance info: %v", err)
+			return nil
+		}
+		if len(instances.Data.Instance) > 0 {
+			for _, ins := range instances.Data.Instance {
+				if ins.HostIP != "" && ins.WebPort != 0 {
+					clusterAddress = append(clusterAddress, fmt.Sprintf("http://%s:%d", ins.HostIP, ins.WebPort))
+				}
+			}
+		}
+	}
+	return clusterAddress
+}

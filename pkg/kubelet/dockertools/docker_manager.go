@@ -449,15 +449,6 @@ func (dm *DockerManager) inspectContainer(id string, podName, podNamespace strin
 				status.State = kubecontainer.ContainerStateUnknown
 				status.Message = fmt.Sprintf("Network error: %#v", err)
 			}
-			if strings.HasPrefix(ip, "172.30") { //兼容旧版midonet容器，ip在eth1上。
-				netip := region.FetchContainerIP(id, 0)
-				if netip == "" {
-					netip = region.FetchContainerIP(id, 0)
-				}
-				if netip != "" {
-					ip = netip
-				}
-			}
 		}
 		return &status, ip, nil
 	}
@@ -2358,8 +2349,6 @@ func (dm *DockerManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStatus *kubecon
 					killContainerResult.Fail(kubecontainer.ErrKillContainer, delErr.Error())
 					glog.Warningf("Clear infra container failed for pod %q: %v", format.Pod(pod), delErr)
 				}
-				//网络设置失败，通知关闭应用
-				region.StopServicePodByReplicaID(pod.Name, region.GetEventID(pod))
 				return
 			}
 
