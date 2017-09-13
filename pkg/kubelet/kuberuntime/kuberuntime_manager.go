@@ -746,10 +746,6 @@ func (m *kubeGenericRuntimeManager) SyncPod(pod *v1.Pod, _ v1.PodStatus, podStat
 			// Step 7: if container is business container,excute region hook   /change by goodrain
 			glog.V(2).Infof("Start to notify service: %s", pod.Name)
 			pod.Status.PodIP = podIP
-			err := region.NotifyService(pod)
-			if err != nil {
-				region.EventLog(pod, "应用启动后通知失败，负载均衡不会写入。失败原因："+err.Error(), "error")
-			}
 		}
 	}
 
@@ -816,6 +812,8 @@ func (m *kubeGenericRuntimeManager) killPodWithSyncResult(pod *v1.Pod, runningPo
 			glog.Errorf("Failed to stop sandbox %q", podSandbox.ID)
 		}
 	}
+	// Release uesd host port by this pod,change by goodrain
+	region.ReleaseHostPort(pod.Name)
 
 	return
 }

@@ -199,7 +199,7 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host H
 		allErrs = append(allErrs, fmt.Errorf("Network plugin %q not found.", networkPluginName))
 	}
 	//设置region api网络类型。目前支持midonet类和calico类（支持pod IP 直接负载的类型）
-	if chosenPlugin.PluginType() != "midonet-cni" {
+	if chosenPlugin.PluginType() != "midonet" {
 		region.SetNetType("calico")
 	}
 	return chosenPlugin, utilerrors.NewAggregate(allErrs)

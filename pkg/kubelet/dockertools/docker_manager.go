@@ -574,33 +574,23 @@ func makeMountBindings(mounts []kubecontainer.Mount) (result []string) {
 	return
 }
 
-func makePortsAndBindings(portMappings []kubecontainer.PortMapping, podName string) (map[dockernat.Port]struct{}, map[dockernat.Port][]dockernat.PortBinding, string) {
+func makePortsAndBindings(portMappings []kubecontainer.PortMapping, podName string) (map[dockernat.Port]struct{}, map[dockernat.Port][]dockernat.PortBinding) {
 	exposedPorts := map[dockernat.Port]struct{}{}
 	portBindings := map[dockernat.Port][]dockernat.PortBinding{}
-	var bindingPort string
 	for _, port := range portMappings {
 		exteriorPort := port.HostPort
 		glog.Infof("port.HostPort=========: %v", port.HostPort)
 		if port.HostPort > 0 {
-			hostID := region.ReadMidomanUUID()
-			portNumber := region.GetDockerPort(hostID, strconv.Itoa(port.ContainerPort), podName)
-			if portNumber == "" {
-				glog.Errorf(" %q not apply host port", hostID)
-				portNumber = region.GetDockerPort(hostID, strconv.Itoa(port.ContainerPort), podName)
-			}
+			portNumber := region.GetHostPortMap(strconv.Itoa(port.ContainerPort), podName)
 			if portNumber != "" {
+				glog.Infof("get host port %s for pod %s port %d", portNumber, podName, port.ContainerPort)
 				var err error
 				exteriorPort, err = strconv.Atoi(portNumber)
 				if err != nil {
 					exteriorPort = 0
 				}
-				if bindingPort != "" {
-					bindingPort = bindingPort + "-"
-				}
-				bindingPort = bindingPort + portNumber
 			}
 		}
-		glog.Infof("exteriorPort=========: %v", exteriorPort)
 		if exteriorPort == 0 {
 			// No need to do port binding when HostPort is not specified
 			continue
@@ -638,7 +628,7 @@ func makePortsAndBindings(portMappings []kubecontainer.PortMapping, podName stri
 			}
 		}
 	}
-	return exposedPorts, portBindings, bindingPort
+	return exposedPorts, portBindings
 }
 
 func (dm *DockerManager) runContainer(
@@ -840,10 +830,9 @@ func (dm *DockerManager) runContainer(
 		},
 		HostConfig: hc,
 	}
-	var exteriorPort string
 	// Set network configuration for infra-container
 	if container.Name == PodInfraContainerName {
-		exteriorPort = setInfraContainerNetworkConfig(pod, netMode, opts, &dockerOpts)
+		setInfraContainerNetworkConfig(pod, netMode, opts, &dockerOpts)
 	}
 
 	setEntrypointAndCommand(container, opts, dockerOpts)
@@ -883,20 +872,6 @@ func (dm *DockerManager) runContainer(
 		return kubecontainer.ContainerID{}, err
 	}
 	dm.recorder.Eventf(ref, v1.EventTypeNormal, events.StartedContainer, "Started container with docker id %v", utilstrings.ShortenString(createResp.ID, 12))
-
-	if exteriorPort != "" {
-		replicaID := strings.Split(pod.Name, "-")[0]
-		hostID := region.ReadMidomanUUID()
-		var version = ""
-		if v, ok := pod.Labels["version"]; ok {
-			version = v
-		}
-		applyResult := region.PostContainerIDNew(hostID, exteriorPort, createResp.ID, replicaID, version, pod.Name)
-		if applyResult == "" {
-			glog.Errorf(" %q not report container port", replicaID)
-			region.PostContainerIDNew(hostID, exteriorPort, createResp.ID, replicaID, version, pod.Name)
-		}
-	}
 	return kubecontainer.DockerID(createResp.ID).ContainerID(), nil
 }
 
@@ -904,15 +879,14 @@ func (dm *DockerManager) runContainer(
 // the user containers will share the same network namespace with infra-container.
 // NOTE: cluster dns settings aren't passed anymore to docker api in all cases, not only for pods with host network:
 // the resolver conf will be overwritten after infra-container creation to override docker's behaviour
-func setInfraContainerNetworkConfig(pod *v1.Pod, netMode string, opts *kubecontainer.RunContainerOptions, dockerOpts *dockertypes.ContainerCreateConfig) string {
-	exposedPorts, portBindings, exteriorPort := makePortsAndBindings(opts.PortMappings, pod.Name)
+func setInfraContainerNetworkConfig(pod *v1.Pod, netMode string, opts *kubecontainer.RunContainerOptions, dockerOpts *dockertypes.ContainerCreateConfig) {
+	exposedPorts, portBindings := makePortsAndBindings(opts.PortMappings, pod.Name)
 	dockerOpts.Config.ExposedPorts = exposedPorts
 	dockerOpts.HostConfig.PortBindings = dockernat.PortMap(portBindings)
 
 	if netMode != namespaceModeHost {
 		dockerOpts.Config.Hostname = opts.Hostname
 	}
-	return exteriorPort
 }
 
 func setEntrypointAndCommand(container *v1.Container, opts *kubecontainer.RunContainerOptions, dockerOpts dockertypes.ContainerCreateConfig) {
@@ -1886,10 +1860,6 @@ func (dm *DockerManager) runContainerInPod(pod *v1.Pod, container *v1.Container,
 	if container.Name != PodInfraContainerName && container.Image != dm.AdaptorImageName {
 		glog.V(2).Infof("Start to notify service: %s", pod.Name)
 		pod.Status.PodIP = podIP
-		err := region.NotifyService(pod)
-		if err != nil {
-			region.EventLog(pod, "应用启动后通知失败，负载均衡不会写入。失败原因："+err.Error(), "error")
-		}
 	}
 	return id, err
 }
