@@ -43,7 +43,7 @@ import (
 
 var (
 	//NetType 网络类型
-	NetType = "midolnet"
+	NetType = "midonet"
 	//CustomFile 配置文件地址
 	CustomFile = "/etc/goodrain/grkubelet.conf"
 )
@@ -327,7 +327,7 @@ func PostContainerIDNew(hostID, portNumber, containerID, replicaID, deployVersio
 //ReadHostUUID get local host uuid
 func ReadHostUUID() string {
 	var result = "0000-0000-0000"
-	if NetType == "midolnet" {
+	if NetType == "midonet" {
 		f, err := os.Open(configMap["UUID_file"])
 		if err != nil {
 			return result

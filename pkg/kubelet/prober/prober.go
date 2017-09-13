@@ -154,7 +154,7 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		scheme := strings.ToLower(string(p.HTTPGet.Scheme))
 		host := p.HTTPGet.Host
 		if host == "" {
-			if region.NetType == "midolnet" || region.NetType == "midonet" {
+			if region.NetType == "midonet" {
 				podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
 				if err != nil {
 					glog.Errorf("get container eth1 ipaddress error. %v", err.Error())
@@ -188,7 +188,7 @@ func (pb *prober) runProbe(p *v1.Probe, pod *v1.Pod, status v1.PodStatus, contai
 		if err != nil {
 			return probe.Unknown, "", err
 		}
-		if region.NetType == "midolnet" || region.NetType == "midonet" {
+		if region.NetType == "midonet" {
 			podStatus, err := pb.runtime.GetPodStatus(pod.UID, pod.Name, pod.Namespace)
 			if err != nil {
 				glog.Errorf("get container eth1 ipaddress error. %v", err.Error())

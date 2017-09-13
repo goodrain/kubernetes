@@ -150,7 +150,7 @@ func modifyHostNetworkOptionForSandbox(hostNetwork bool, network *knetwork.Plugi
 
 	switch network.PluginName() {
 	case "cni":
-		if region.NetType == "midolnet" {
+		if region.NetType == "midonet" {
 			hc.NetworkMode = "bridge"
 		} else {
 			hc.NetworkMode = "none"
