@@ -235,7 +235,11 @@ func ReleaseHostPort(podName string) {
 						for i := range ports {
 							if ports[i] == rep {
 								if i == 0 {
-									ports = ports[1 : len(ports)-1]
+									if len(ports) > 1 {
+										ports = ports[1 : len(ports)-1]
+									} else {
+										ports = []int{}
+									}
 								} else if i < len(ports)-1 {
 									ports = append(ports[0:i], ports[i+1:len(ports)-1]...)
 								} else {
