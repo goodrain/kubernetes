@@ -156,7 +156,12 @@ func GetHostPortMap(containerPort string, podName string) string {
 					continue
 				}
 				sort.Ints(ports)
-				max := ports[len(ports)-1]
+				var max int
+				if len(ports) > 0 {
+					max = ports[len(ports)-1]
+				} else {
+					max = minport - 1
+				}
 				if max < maxport {
 					ports = append(ports, max+1)
 					if err := selectPort(ctx, cli, fmt.Sprintf("%d", max+1), podName, containerPort, ports); err != nil {
