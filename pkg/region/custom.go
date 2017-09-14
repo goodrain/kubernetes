@@ -26,6 +26,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,7 +39,6 @@ import (
 	"sync"
 
 	"github.com/coreos/etcd/clientv3"
-	"github.com/golang/glog"
 )
 
 var (
@@ -95,12 +95,31 @@ func ParseConfig(customFile string) {
 	if etcd, ok := configMap["etcd"]; ok {
 		etcdEndpoints = strings.Split(etcd, ",")
 	}
+	setLogFile()
 	go func() {
 		servers := GetEventLogInstance()
 		if servers != nil && len(servers) > 0 {
 			eventLogServers = servers
 		}
 	}()
+}
+func setLogFile() {
+	logpath := "/var/log/kubelet-custom"
+	if lf, ok := configMap["logpath"]; ok {
+		logpath = lf
+	}
+
+	_, err := os.Stat(logpath)
+	if os.IsNotExist(err) {
+		os.Mkdir(logpath, os.ModeDir)
+	}
+	logFile, err := os.OpenFile(path.Join(logpath, "custom.log"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.ModePerm)
+	if err != nil {
+		logrus.Warning("Open log file error. so log will be writed in stderr")
+		logrus.SetOutput(os.Stderr)
+	} else {
+		logrus.SetOutput(logFile)
+	}
 }
 
 var once sync.Once
@@ -114,13 +133,14 @@ func SetNetType(netType string) {
 
 //GetHostPortMap 端口映射分配
 func GetHostPortMap(containerPort string, podName string) string {
+	logrus.Infof("start get host port for pod %s port %s", podName, containerPort)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
 			Endpoints:   etcdEndpoints,
 			DialTimeout: 10 * time.Second,
 		})
 		if err != nil {
-			glog.Errorf("get port map error.%s", err.Error())
+			logrus.Errorf("get port map error.%s", err.Error())
 			time.Sleep(time.Second * 3)
 			continue
 		}
@@ -134,13 +154,13 @@ func GetHostPortMap(containerPort string, podName string) string {
 		}
 		res, err = cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
 		if err != nil {
-			glog.Errorf("get port map error.%s", err.Error())
+			logrus.Errorf("get port map error.%s", err.Error())
 			time.Sleep(time.Second * 3)
 			continue
 		}
 		if res.Count == 0 { //第一个端口分配
 			if err := selectPort(ctx, cli, strconv.Itoa(minport), podName, containerPort, []int{minport}); err != nil {
-				glog.Errorf("get port map error select port .%s", err.Error())
+				logrus.Errorf("get port map error select port .%s", err.Error())
 				time.Sleep(time.Second * 3)
 				continue
 			}
@@ -151,7 +171,7 @@ func GetHostPortMap(containerPort string, podName string) string {
 				var ports []int
 				err = json.Unmarshal(kv.Value, &ports)
 				if err != nil {
-					glog.Errorf("get port map error unmarshal used port.%s", err.Error())
+					logrus.Errorf("get port map error unmarshal used port.%s", err.Error())
 					time.Sleep(time.Second * 3)
 					continue
 				}
@@ -165,7 +185,7 @@ func GetHostPortMap(containerPort string, podName string) string {
 				if max < maxport {
 					ports = append(ports, max+1)
 					if err := selectPort(ctx, cli, fmt.Sprintf("%d", max+1), podName, containerPort, ports); err != nil {
-						glog.Errorf("get port map error select port .%s", err.Error())
+						logrus.Errorf("get port map error select port .%s", err.Error())
 						time.Sleep(time.Second * 3)
 						continue
 					}
@@ -175,7 +195,7 @@ func GetHostPortMap(containerPort string, podName string) string {
 				for _, used := range ports {
 					if used-wantselect > 0 {
 						if err := selectPort(ctx, cli, fmt.Sprintf("%d", wantselect), podName, containerPort, append(ports, wantselect)); err != nil {
-							glog.Errorf("get port map error select port .%s", err.Error())
+							logrus.Errorf("get port map error select port .%s", err.Error())
 							time.Sleep(time.Second * 3)
 							continue
 						} else {
@@ -187,28 +207,29 @@ func GetHostPortMap(containerPort string, podName string) string {
 			}
 		}
 	}
-	glog.Errorf("can not select a map port for pod %s port %s", podName, containerPort)
+	logrus.Errorf("can not select a map port for pod %s port %s", podName, containerPort)
 	return "0"
 }
 
 //ReleaseHostPort 释放POD 使用的端口
 func ReleaseHostPort(podName string) {
+	logrus.Infof("start release host port for pod %s", podName)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
 			Endpoints:   etcdEndpoints,
 			DialTimeout: 10 * time.Second,
 		})
 		if err != nil {
-			glog.Errorf("release host port error.%s", err.Error())
+			logrus.Errorf("release host port error.%s", err.Error())
 			time.Sleep(time.Second * 3)
 			continue
 		}
 		defer cli.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
-		res, err := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithRange("usedport"))
+		res, err := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithRange("mapport"))
 		if err != nil {
-			glog.Error("get pod host port map info error.", err.Error())
+			logrus.Error("get pod host port map info error.", err.Error())
 			time.Sleep(3 * time.Second)
 			continue
 		}
@@ -222,7 +243,7 @@ func ReleaseHostPort(podName string) {
 		if len(releasePort) > 0 {
 			res, err := cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
 			if err != nil {
-				glog.Error("delete pod port map info error.", err.Error())
+				logrus.Error("delete pod port map info error.", err.Error())
 				time.Sleep(time.Second * 3)
 				continue
 			}
@@ -231,7 +252,7 @@ func ReleaseHostPort(podName string) {
 					var ports []int
 					err = json.Unmarshal(kv.Value, &ports)
 					if err != nil {
-						glog.Errorf("get port map error unmarshal used port.%s", err.Error())
+						logrus.Errorf("get port map error unmarshal used port.%s", err.Error())
 						time.Sleep(time.Second * 3)
 						continue
 					}
@@ -271,7 +292,7 @@ func ReleaseHostPort(podName string) {
 			}
 		}
 		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithRange("usedport")); err != nil {
-			glog.Error("delete pod port map info error.", err.Error())
+			logrus.Error("delete pod port map info error.", err.Error())
 		}
 		break
 	}
@@ -299,38 +320,6 @@ type HostPortInfo struct {
 	ReplicaID     string `json:"replica_id"` //rc id
 	DeployVersion string `json:"deploy_version"`
 	PodName       string `json:"pod_name"`
-}
-
-// PostContainerIDNew 推送容器端口
-//register container info
-func PostContainerIDNew(hostID, portNumber, containerID, replicaID, deployVersion, podName string) string {
-	var result = ""
-	var url = configMap["Region_net_api"] + NetType + "/" + hostID + "/ports/" + portNumber
-	s := HostPortInfo{
-		CtnID:         containerID,
-		ReplicaID:     replicaID,
-		DeployVersion: deployVersion,
-		PodName:       podName,
-	}
-	var jsonStr, _ = json.Marshal(s)
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Token 5ca196801173be06c7e6ce41d5f7b3b8071e680a")
-	client := &http.Client{
-		Timeout: HTTPTimeOut,
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		glog.Errorf("PostContainerIdNew Error %s,URL:%s", err.Error(), url)
-	} else {
-		defer resp.Body.Close()
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			glog.Errorf("PostContainerIdNew Read body error.%s", string(body))
-		}
-		result = "ok"
-	}
-	return result
 }
 
 //ReadHostUUID get local host uuid
@@ -412,17 +401,17 @@ func EventLog(pod *v1.Pod, message, level string) {
 		}
 		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
 		if err != nil {
-			glog.Error("new send event message request error.", err.Error())
+			logrus.Error("new send event message request error.", err.Error())
 			continue
 		}
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
-			glog.Error("Send event message to server error.", err.Error())
+			logrus.Error("Send event message to server error.", err.Error())
 			continue
 		}
 		if res != nil && res.StatusCode != 200 {
 			rb, _ := ioutil.ReadAll(res.Body)
-			glog.Error("Post EventMessage Error:" + string(rb))
+			logrus.Error("Post EventMessage Error:" + string(rb))
 		}
 		if res != nil && res.Body != nil {
 			res.Body.Close()
@@ -439,7 +428,7 @@ func GetEventLogInstance() []string {
 	var clusterAddress []string
 	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/event/instance", etcdEndpoints[0]))
 	if err != nil {
-		glog.Errorf("Error get docker log instance from etcd: %v", err)
+		logrus.Errorf("Error get docker log instance from etcd: %v", err)
 		return nil
 	}
 	var instances = struct {
@@ -455,7 +444,7 @@ func GetEventLogInstance() []string {
 		defer res.Body.Close()
 		err = json.NewDecoder(res.Body).Decode(&instances)
 		if err != nil {
-			glog.Errorf("Error Decode instance info: %v", err)
+			logrus.Errorf("Error Decode instance info: %v", err)
 			return nil
 		}
 		if len(instances.Data.Instance) > 0 {
