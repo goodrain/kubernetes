@@ -54,7 +54,8 @@ var HTTPTimeOut = time.Duration(25 * time.Second)
 var configMap map[string]string
 
 var eventLogServers = []string{"http://127.0.0.1:6363"}
-var etcdEndpoints = []string{"127.0.0.1:2379"}
+var etcdV3Endpoints = []string{"127.0.0.1:2379"}
+var etcdV2Endpoints = []string{"127.0.0.1:4001"}
 var minport = 11000
 var maxport = 20000
 
@@ -92,14 +93,23 @@ func ParseConfig(customFile string) {
 			maxport = m
 		}
 	}
-	if etcd, ok := configMap["etcd"]; ok {
-		etcdEndpoints = strings.Split(etcd, ",")
+	if etcdv3, ok := configMap["etcdv3"]; ok {
+		etcdV3Endpoints = strings.Split(etcdv3, ",")
+	}
+	if etcdv2, ok := configMap["etcdv2"]; ok {
+		etcdV2Endpoints = strings.Split(etcdv2, ",")
 	}
 	setLogFile()
 	go func() {
-		servers := GetEventLogInstance()
-		if servers != nil && len(servers) > 0 {
-			eventLogServers = servers
+		tike := time.Tick(time.Minute * 5)
+		for {
+			servers := GetEventLogInstance()
+			if servers != nil && len(servers) > 0 {
+				eventLogServers = servers
+			}
+			select {
+			case <-tike:
+			}
 		}
 	}()
 }
@@ -131,12 +141,15 @@ func SetNetType(netType string) {
 	})
 }
 
+var getHostPortLock sync.Mutex
+
 //GetHostPortMap 端口映射分配
+//TODO:实现更好的线程安全的端口分配
 func GetHostPortMap(containerPort string, podName string) string {
 	logrus.Infof("start get host port for pod %s port %s", podName, containerPort)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   etcdEndpoints,
+			Endpoints:   etcdV3Endpoints,
 			DialTimeout: 10 * time.Second,
 		})
 		if err != nil {
@@ -152,6 +165,8 @@ func GetHostPortMap(containerPort string, podName string) string {
 			//释放掉原端口
 			ReleaseHostPort(podName)
 		}
+		getHostPortLock.Lock()
+		defer getHostPortLock.Unlock()
 		res, err = cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
 		if err != nil {
 			logrus.Errorf("get port map error.%s", err.Error())
@@ -216,7 +231,7 @@ func ReleaseHostPort(podName string) {
 	logrus.Infof("start release host port for pod %s", podName)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   etcdEndpoints,
+			Endpoints:   etcdV3Endpoints,
 			DialTimeout: 10 * time.Second,
 		})
 		if err != nil {
@@ -426,7 +441,7 @@ func EventLog(pod *v1.Pod, message, level string) {
 //GetEventLogInstance 获取EventLogInstance
 func GetEventLogInstance() []string {
 	var clusterAddress []string
-	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/event/instance", etcdEndpoints[0]))
+	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/event/instance", etcdV2Endpoints[0]))
 	if err != nil {
 		logrus.Errorf("Error get docker log instance from etcd: %v", err)
 		return nil
