@@ -813,7 +813,7 @@ func (m *kubeGenericRuntimeManager) killPodWithSyncResult(pod *v1.Pod, runningPo
 		}
 	}
 	// Release uesd host port by this pod,change by goodrain
-	region.ReleaseHostPort(pod.Name)
+	region.ReleaseHostPort(pod.Name, true)
 
 	return
 }

@@ -165,7 +165,7 @@ func GetHostPortMap(containerPort string, podName string) string {
 		res, _ := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport/%s/mapport", podName, containerPort))
 		if res.Count != 0 {
 			//释放掉原端口
-			ReleaseHostPort(podName)
+			ReleaseHostPort(podName, false)
 		}
 		res, err = cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
 		if err != nil {
@@ -227,9 +227,11 @@ func GetHostPortMap(containerPort string, podName string) string {
 }
 
 //ReleaseHostPort 释放POD 使用的端口
-func ReleaseHostPort(podName string) {
-	getHostPortLock.Lock()
-	defer getHostPortLock.Unlock()
+func ReleaseHostPort(podName string, lock bool) {
+	if lock {
+		getHostPortLock.Lock()
+		defer getHostPortLock.Unlock()
+	}
 	logrus.Infof("start release host port for pod %s", podName)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
@@ -244,7 +246,7 @@ func ReleaseHostPort(podName string) {
 		defer cli.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
-		res, err := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithRange("mapport"))
+		res, err := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithPrefix())
 		if err != nil {
 			logrus.Error("get pod host port map info error.", err.Error())
 			time.Sleep(3 * time.Second)
@@ -252,6 +254,7 @@ func ReleaseHostPort(podName string) {
 		}
 		var releasePort []int
 		for _, kv := range res.Kvs {
+			logrus.Info(string(kv.Key))
 			port, err := strconv.Atoi(string(kv.Value))
 			if err == nil {
 				releasePort = append(releasePort, port)
@@ -275,19 +278,10 @@ func ReleaseHostPort(podName string) {
 					}
 					sort.Ints(ports)
 					for _, rep := range releasePort {
+						logrus.Info(ports)
 						for i := range ports {
 							if ports[i] == rep {
-								if i == 0 {
-									if len(ports) > 1 {
-										ports = ports[1 : len(ports)-1]
-									} else {
-										ports = []int{}
-									}
-								} else if i < len(ports)-1 {
-									ports = append(ports[0:i], ports[i+1:len(ports)-1]...)
-								} else {
-									ports = ports[0 : len(ports)-1]
-								}
+								ports = append(ports[:i], ports[i+1:]...)
 								break
 							}
 							if ports[i] > rep {
@@ -308,7 +302,7 @@ func ReleaseHostPort(podName string) {
 				}
 			}
 		}
-		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithRange("usedport")); err != nil {
+		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithPrefix()); err != nil {
 			logrus.Error("delete pod port map info error.", err.Error())
 		}
 		break

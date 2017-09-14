@@ -8,6 +8,14 @@ func TestGetPortMap(t *testing.T) {
 	t.Log(port)
 	port = GetHostPortMap("81", "xxx-46")
 	t.Log(port)
+	port = GetHostPortMap("80", "xxx-47")
+	t.Log(port)
+	port = GetHostPortMap("81", "xxx-47")
+	t.Log(port)
+	port = GetHostPortMap("80", "xxx-48")
+	t.Log(port)
+	port = GetHostPortMap("81", "xxx-48")
+	t.Log(port)
 }
 
 func BenchmarkGetPortMap(b *testing.B) {
@@ -22,5 +30,5 @@ func BenchmarkGetPortMap(b *testing.B) {
 }
 
 func TestReleaseHostPort(t *testing.T) {
-	ReleaseHostPort("xxx-46")
+	ReleaseHostPort("xxx-46", true)
 }
