@@ -146,6 +146,8 @@ var getHostPortLock sync.Mutex
 //GetHostPortMap 端口映射分配
 //TODO:实现更好的线程安全的端口分配
 func GetHostPortMap(containerPort string, podName string) string {
+	getHostPortLock.Lock()
+	defer getHostPortLock.Unlock()
 	logrus.Infof("start get host port for pod %s port %s", podName, containerPort)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
@@ -165,8 +167,6 @@ func GetHostPortMap(containerPort string, podName string) string {
 			//释放掉原端口
 			ReleaseHostPort(podName)
 		}
-		getHostPortLock.Lock()
-		defer getHostPortLock.Unlock()
 		res, err = cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
 		if err != nil {
 			logrus.Errorf("get port map error.%s", err.Error())
@@ -228,6 +228,8 @@ func GetHostPortMap(containerPort string, podName string) string {
 
 //ReleaseHostPort 释放POD 使用的端口
 func ReleaseHostPort(podName string) {
+	getHostPortLock.Lock()
+	defer getHostPortLock.Unlock()
 	logrus.Infof("start release host port for pod %s", podName)
 	for i := 0; i < 3; i++ {
 		cli, err := clientv3.New(clientv3.Config{
@@ -326,6 +328,7 @@ func selectPort(ctx context.Context, cli *clientv3.Client, selectPort, podName, 
 	if err != nil {
 		return err
 	}
+	logrus.Infof("pod %s port %s map host port %s", podName, containerPort, selectPort)
 	return nil
 }
 
@@ -441,7 +444,7 @@ func EventLog(pod *v1.Pod, message, level string) {
 //GetEventLogInstance 获取EventLogInstance
 func GetEventLogInstance() []string {
 	var clusterAddress []string
-	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/event/instance", etcdV2Endpoints[0]))
+	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/v2/keys/event/instance", etcdV2Endpoints[0]))
 	if err != nil {
 		logrus.Errorf("Error get docker log instance from etcd: %v", err)
 		return nil
