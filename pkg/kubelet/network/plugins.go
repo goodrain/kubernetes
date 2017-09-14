@@ -287,6 +287,7 @@ func getOnePodIP(execer utilexec.Interface, nsenterPath, netnsPath, interfaceNam
 
 // GetPodIP gets the IP of the pod by inspecting the network info inside the pod's network namespace.
 func GetPodIP(execer utilexec.Interface, nsenterPath, netnsPath, interfaceName string) (net.IP, error) {
+	glog.Info("GetPodIP nsenterPath %s netnsPath %s", nsenterPath, netnsPath)
 	ip, err := getOnePodIP(execer, nsenterPath, netnsPath, interfaceName, "-4")
 	if err != nil {
 		// Fall back to IPv6 address if no IPv4 address is present

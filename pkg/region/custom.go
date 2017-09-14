@@ -246,11 +246,14 @@ func ReleaseHostPort(podName string, lock bool) {
 		defer cli.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
-		res, err := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithPrefix())
+		res, err := cli.Get(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix())
 		if err != nil {
 			logrus.Error("get pod host port map info error.", err.Error())
 			time.Sleep(3 * time.Second)
 			continue
+		}
+		if res.Count == 0 {
+			return
 		}
 		var releasePort []int
 		for _, kv := range res.Kvs {
@@ -302,7 +305,7 @@ func ReleaseHostPort(podName string, lock bool) {
 				}
 			}
 		}
-		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pod/%s/outerport", podName), clientv3.WithPrefix()); err != nil {
+		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix()); err != nil {
 			logrus.Error("delete pod port map info error.", err.Error())
 		}
 		break
@@ -314,11 +317,11 @@ func selectPort(ctx context.Context, cli *clientv3.Client, selectPort, podName, 
 	if err != nil {
 		return err
 	}
-	_, err = cli.Put(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()), string(su))
+	_, err = cli.Put(ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()), string(su))
 	if err != nil {
 		return err
 	}
-	_, err = cli.Put(ctx, fmt.Sprintf("/store/pod/%s/outerport/%s/mapport", podName, containerPort), selectPort)
+	_, err = cli.Put(ctx, fmt.Sprintf("/store/pods/%s/ports/%s/mapport", podName, containerPort), selectPort)
 	if err != nil {
 		return err
 	}
