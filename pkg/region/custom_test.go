@@ -52,3 +52,7 @@ func TestSync(t *testing.T) {
 	}
 	//store.Sync()
 }
+
+func TestGetEventLogInstance(t *testing.T) {
+	t.Log(GetEventLogInstance())
+}

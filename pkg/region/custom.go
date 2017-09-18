@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/golang/glog"
 
 	"github.com/Sirupsen/logrus"
@@ -58,7 +60,7 @@ var configMap map[string]string
 
 var eventLogServers = []string{"http://127.0.0.1:6363"}
 var etcdV3Endpoints = []string{"127.0.0.1:2379"}
-var etcdV2Endpoints = []string{"http://127.0.0.1:4001"}
+var etcdV2Endpoints = []string{"http://127.0.0.1:2379"}
 var minport = 11000
 var maxport = 20000
 
@@ -259,9 +261,11 @@ func (s *HostPortStore) Sync() {
 	}
 	var realUsedPort []int
 	for _, kv := range res.Kvs {
-		port, err := strconv.Atoi(string(kv.Value))
-		if err == nil {
-			realUsedPort = append(realUsedPort, port)
+		if strings.HasSuffix(string(kv.Key), "/mapport") {
+			port, err := strconv.Atoi(string(kv.Value))
+			if err == nil {
+				realUsedPort = append(realUsedPort, port)
+			}
 		}
 	}
 	sort.Ints(realUsedPort)
@@ -567,26 +571,22 @@ func GetEventLogInstance() []string {
 		logrus.Errorf("Error get docker log instance from etcd: %v", err)
 		return nil
 	}
-	var instances = struct {
-		Data struct {
-			Instance []struct {
-				HostIP  string
-				WebPort int
-			} `json:"instance"`
-		} `json:"data"`
-		OK bool `json:"ok"`
-	}{}
 	if res != nil && res.Body != nil {
 		defer res.Body.Close()
-		err = json.NewDecoder(res.Body).Decode(&instances)
-		if err != nil {
-			logrus.Errorf("Error Decode instance info: %v", err)
-			return nil
-		}
-		if len(instances.Data.Instance) > 0 {
-			for _, ins := range instances.Data.Instance {
-				if ins.HostIP != "" && ins.WebPort != 0 {
-					clusterAddress = append(clusterAddress, fmt.Sprintf("http://%s:%d", ins.HostIP, ins.WebPort))
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		logrus.Error("read get instance body data error. ", err.Error())
+		return nil
+	}
+	nodes := gjson.GetBytes(body, "node.nodes").Array()
+	if nodes != nil {
+		for _, node := range nodes {
+			if value, ok := node.Map()["value"]; ok {
+				hostIP := gjson.Get(value.String(), "HostIP").String()
+				webPort := gjson.Get(value.String(), "WebPort").Int()
+				if hostIP != "" && webPort != 0 {
+					clusterAddress = append(clusterAddress, fmt.Sprintf("http://%s:%d", hostIP, webPort))
 				}
 			}
 		}
