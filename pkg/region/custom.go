@@ -37,7 +37,6 @@ import (
 	"github.com/Sirupsen/logrus"
 
 	"k8s.io/kubernetes/pkg/api/v1"
-	"k8s.io/kubernetes/pkg/util/interrupt"
 
 	"sync"
 
@@ -85,15 +84,7 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 		}
 	}
 	go func() {
-		// Use interrupt handler to make sure the server to be stopped properly.
-		handle := interrupt.New(nil, c.Stop)
-		err := handle.Run(func() error {
-			c.discoverEventServer()
-			return nil
-		})
-		if err != nil {
-			logrus.Error("interrupt run discover event server endoints error.", err.Error())
-		}
+		c.discoverEventServer()
 	}()
 	return nil
 }
@@ -214,6 +205,7 @@ func GetHostPortStore() (*HostPortStore, error) {
 		cli:    cli,
 	}
 	defaultHostPortStore = store
+	store.Sync()
 	go store.Produced()
 	return store, nil
 }
@@ -260,6 +252,27 @@ func (s *HostPortStore) Consum() int {
 	}
 }
 
+func (s *HostPortStore) Sync() {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*3)
+	defer cancel()
+	res, err := s.cli.Get(ctx, "/store/pods/", clientv3.WithPrefix())
+	if err != nil {
+		logrus.Error("get pod host port map info when sync port error.", err.Error())
+	}
+	if res.Count == 0 {
+		return
+	}
+	var realUsedPort []int
+	for _, kv := range res.Kvs {
+		logrus.Info(string(kv.Key))
+		port, err := strconv.Atoi(string(kv.Value))
+		if err == nil {
+			realUsedPort = append(realUsedPort, port)
+		}
+	}
+	s.saveUsedPort(realUsedPort)
+}
+
 //Produced 生产port
 func (s *HostPortStore) Produced() {
 	for {
@@ -276,6 +289,7 @@ func (s *HostPortStore) Produced() {
 		}
 	}
 }
+
 func (s *HostPortStore) selectPort() int {
 	s.getHostPortLock.Lock()
 	defer s.getHostPortLock.Unlock()
