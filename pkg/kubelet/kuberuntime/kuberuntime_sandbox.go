@@ -50,11 +50,15 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 		return "", message, err
 	}
 	// Create map host port change from goodrain
+	portStore, err := region.GetHostPortStore()
+	if err != nil {
+		glog.Error("Get host port store error.", err.Error())
+	}
 	if ports := podSandboxConfig.GetPortMappings(); ports != nil {
 		for _, port := range ports {
 			var exteriorPort int
-			if port.HostPort > 0 {
-				portNumber := region.GetHostPortMap(strconv.Itoa(int(port.ContainerPort)), pod.Name)
+			if port.HostPort > 0 && portStore != nil {
+				portNumber := portStore.GetHostPort(strconv.Itoa(int(port.ContainerPort)), pod.Name)
 				if portNumber != "" {
 					glog.Infof("get host port %s for pod %s port %d", portNumber, pod.Name, port.ContainerPort)
 					var err error

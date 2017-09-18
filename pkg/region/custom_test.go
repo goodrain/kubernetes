@@ -4,24 +4,32 @@ import "testing"
 import "fmt"
 
 func TestGetPortMap(t *testing.T) {
-	port := GetHostPortMap("80", "xxx-46")
+	store, err := GetHostPortStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := store.GetHostPort("80", "xxx-46")
 	t.Log(port)
-	port = GetHostPortMap("81", "xxx-46")
+	port = store.GetHostPort("81", "xxx-46")
 	t.Log(port)
-	port = GetHostPortMap("80", "xxx-47")
+	port = store.GetHostPort("80", "xxx-47")
 	t.Log(port)
-	port = GetHostPortMap("81", "xxx-47")
+	port = store.GetHostPort("81", "xxx-47")
 	t.Log(port)
-	port = GetHostPortMap("80", "xxx-48")
+	port = store.GetHostPort("80", "xxx-48")
 	t.Log(port)
-	port = GetHostPortMap("81", "xxx-48")
+	port = store.GetHostPort("81", "xxx-48")
 	t.Log(port)
 }
 
 func BenchmarkGetPortMap(b *testing.B) {
+	store, err := GetHostPortStore()
+	if err != nil {
+		b.Fatal(err)
+	}
 	var port string
 	for i := 0; i < b.N; i++ {
-		port = GetHostPortMap("80", fmt.Sprintf("xxx-%d", i))
+		port = store.GetHostPort("80", fmt.Sprintf("xxx-%d", i))
 		if port == "0" {
 			b.Fail()
 		}
@@ -30,5 +38,9 @@ func BenchmarkGetPortMap(b *testing.B) {
 }
 
 func TestReleaseHostPort(t *testing.T) {
-	ReleaseHostPort("xxx-46", true)
+	store, err := GetHostPortStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.ReleaseHostPortByPod("xxx-46")
 }

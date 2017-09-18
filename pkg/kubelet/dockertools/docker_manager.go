@@ -577,11 +577,15 @@ func makeMountBindings(mounts []kubecontainer.Mount) (result []string) {
 func makePortsAndBindings(portMappings []kubecontainer.PortMapping, podName string) (map[dockernat.Port]struct{}, map[dockernat.Port][]dockernat.PortBinding) {
 	exposedPorts := map[dockernat.Port]struct{}{}
 	portBindings := map[dockernat.Port][]dockernat.PortBinding{}
+	portStore, err := region.GetHostPortStore()
+	if err != nil {
+		glog.Error("Get host port store error.", err.Error())
+	}
 	for _, port := range portMappings {
 		exteriorPort := port.HostPort
 		glog.Infof("port.HostPort=========: %v", port.HostPort)
-		if port.HostPort > 0 {
-			portNumber := region.GetHostPortMap(strconv.Itoa(port.ContainerPort), podName)
+		if port.HostPort > 0 && portStore != nil {
+			portNumber := portStore.GetHostPort(strconv.Itoa(port.ContainerPort), podName)
 			if portNumber != "" {
 				glog.Infof("get host port %s for pod %s port %d", portNumber, podName, port.ContainerPort)
 				var err error

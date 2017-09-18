@@ -813,7 +813,12 @@ func (m *kubeGenericRuntimeManager) killPodWithSyncResult(pod *v1.Pod, runningPo
 		}
 	}
 	// Release uesd host port by this pod,change by goodrain
-	region.ReleaseHostPort(pod.Name, true)
+	portStore, err := region.GetHostPortStore()
+	if err != nil {
+		glog.Error("Get host port store error.", err.Error())
+	} else {
+		portStore.ReleaseHostPortByPod(pod.Name)
+	}
 
 	return
 }

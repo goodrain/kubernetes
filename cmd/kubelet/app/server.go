@@ -283,10 +283,12 @@ func initKubeletConfigSync(s *options.KubeletServer) (*componentconfig.KubeletCo
 // Otherwise, the caller is assumed to have set up the KubeletDeps object and a default one will
 // not be generated.
 func Run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) error {
-	region.ParseConfig(s.CustomFile)
+	//change by goodrain
+	if err := region.GetCustom().Start(s.CustomFile, true); err != nil {
+		return fmt.Errorf("failed to run custom(host port manager): %v", err)
+	}
 	if err := run(s, kubeDeps); err != nil {
 		return fmt.Errorf("failed to run Kubelet: %v", err)
-
 	}
 	return nil
 }
@@ -593,8 +595,9 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 	if s.RunOnce {
 		return nil
 	}
-
+	glog.Info("Kubelet start completly")
 	<-done
+	glog.Info("Kubelet start completly after done")
 	return nil
 }
 

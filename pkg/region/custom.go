@@ -32,6 +32,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
+
 	"github.com/Sirupsen/logrus"
 
 	"k8s.io/kubernetes/pkg/api/v1"
@@ -55,9 +57,55 @@ var configMap map[string]string
 
 var eventLogServers = []string{"http://127.0.0.1:6363"}
 var etcdV3Endpoints = []string{"127.0.0.1:2379"}
-var etcdV2Endpoints = []string{"127.0.0.1:4001"}
+var etcdV2Endpoints = []string{"http://127.0.0.1:4001"}
 var minport = 11000
 var maxport = 20000
+
+type Custom struct {
+	ctx           context.Context
+	cancel        context.CancelFunc
+	hostPortStore *HostPortStore
+}
+
+func GetCustom() *Custom {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Custom{
+		ctx:    ctx,
+		cancel: cancel,
+	}
+}
+func (c *Custom) Start(customFile string, kubelet bool) (err error) {
+	ParseConfig(customFile)
+	go c.discoverEventServer()
+	if kubelet {
+		c.hostPortStore, err = GetHostPortStore()
+		if err != nil {
+			glog.Error("start host port store manager error.", err.Error())
+			return err
+		}
+	}
+	return nil
+}
+func (c *Custom) discoverEventServer() {
+	tike := time.Tick(time.Minute * 5)
+	for {
+		servers := GetEventLogInstance()
+		if servers != nil && len(servers) > 0 {
+			eventLogServers = servers
+		}
+		select {
+		case <-tike:
+		case <-c.ctx.Done():
+			return
+		}
+	}
+}
+func (c *Custom) Stop(kubelet bool) {
+	c.cancel()
+	if kubelet {
+		c.hostPortStore.Stop()
+	}
+}
 
 //ParseConfig 解析配置文件
 func ParseConfig(customFile string) {
@@ -100,18 +148,6 @@ func ParseConfig(customFile string) {
 		etcdV2Endpoints = strings.Split(etcdv2, ",")
 	}
 	setLogFile()
-	go func() {
-		tike := time.Tick(time.Minute * 5)
-		for {
-			servers := GetEventLogInstance()
-			if servers != nil && len(servers) > 0 {
-				eventLogServers = servers
-			}
-			select {
-			case <-tike:
-			}
-		}
-	}()
 }
 func setLogFile() {
 	logpath := "/var/log/kubelet-custom"
@@ -141,54 +177,111 @@ func SetNetType(netType string) {
 	})
 }
 
-var getHostPortLock sync.Mutex
+var defaultHostPortStore *HostPortStore
 
-//GetHostPortMap 端口映射分配
-//TODO:实现更好的线程安全的端口分配
-func GetHostPortMap(containerPort string, podName string) string {
-	getHostPortLock.Lock()
-	defer getHostPortLock.Unlock()
-	logrus.Infof("start get host port for pod %s port %s", podName, containerPort)
-	for i := 0; i < 3; i++ {
-		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   etcdV3Endpoints,
-			DialTimeout: 10 * time.Second,
-		})
-		if err != nil {
-			logrus.Errorf("get port map error.%s", err.Error())
+func GetHostPortStore() (*HostPortStore, error) {
+	if defaultHostPortStore != nil {
+		return defaultHostPortStore, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   etcdV3Endpoints,
+		DialTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		logrus.Errorf("release host port error.%s", err.Error())
+		cancel()
+		return nil, err
+	}
+	store := &HostPortStore{
+		store:  make(chan int, 3),
+		ctx:    ctx,
+		cancel: cancel,
+		cli:    cli,
+	}
+	defaultHostPortStore = store
+	go store.Produced()
+	return store, nil
+}
+
+func (s *HostPortStore) Stop() {
+	s.cancel()
+	select {
+	case port := <-s.store:
+		s.ReleaseHostPort(port)
+	default:
+		s.cli.Close()
+	}
+}
+
+type HostPortStore struct {
+	store           chan int
+	ctx             context.Context
+	cancel          context.CancelFunc
+	cli             *clientv3.Client
+	getHostPortLock sync.Mutex
+}
+
+func (s *HostPortStore) saveUsedPort(ports []int) error {
+	su, err := json.Marshal(ports)
+	if err != nil {
+		return err
+	}
+	_, err = s.cli.Put(s.ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()), string(su))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *HostPortStore) Consum() int {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*6)
+	defer cancel()
+	select {
+	case port := <-s.store:
+		return port
+	case <-ctx.Done():
+		logrus.Error("get host map port timeout.")
+		return 0
+	}
+}
+
+//Produced 生产port
+func (s *HostPortStore) Produced() {
+	for {
+		selectport := s.selectPort()
+		if selectport == 0 {
+			logrus.Error("Produced can not select a port to be uesd. waitting 3 seconds and retry.")
 			time.Sleep(time.Second * 3)
 			continue
 		}
-		defer cli.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-		defer cancel()
-		res, _ := cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport/%s/mapport", podName, containerPort))
-		if res.Count != 0 {
-			//释放掉原端口
-			ReleaseHostPort(podName, false)
+		select {
+		case <-s.ctx.Done():
+			return
+		case s.store <- selectport:
 		}
-		res, err = cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
-		if err != nil {
-			logrus.Errorf("get port map error.%s", err.Error())
-			time.Sleep(time.Second * 3)
-			continue
+	}
+}
+func (s *HostPortStore) selectPort() int {
+	s.getHostPortLock.Lock()
+	defer s.getHostPortLock.Unlock()
+	var selectport int
+	res, err := s.cli.Get(s.ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()))
+	if err != nil {
+		logrus.Errorf("get port map error.%s", err.Error())
+	}
+	if res.Count == 0 { //第一个端口分配
+		if err := s.saveUsedPort([]int{minport}); err != nil {
+			logrus.Errorf("get port map error select port .%s", err.Error())
 		}
-		if res.Count == 0 { //第一个端口分配
-			if err := selectPort(ctx, cli, strconv.Itoa(minport), podName, containerPort, []int{minport}); err != nil {
-				logrus.Errorf("get port map error select port .%s", err.Error())
-				time.Sleep(time.Second * 3)
-				continue
-			}
-			return strconv.Itoa(minport)
-		}
+		selectport = minport
+	} else {
 		for _, kv := range res.Kvs {
-			if string(kv.Key) == fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()) {
+			if string(kv.Key) == fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()) {
 				var ports []int
 				err = json.Unmarshal(kv.Value, &ports)
 				if err != nil {
 					logrus.Errorf("get port map error unmarshal used port.%s", err.Error())
-					time.Sleep(time.Second * 3)
-					continue
 				}
 				sort.Ints(ports)
 				var max int
@@ -199,22 +292,20 @@ func GetHostPortMap(containerPort string, podName string) string {
 				}
 				if max < maxport {
 					ports = append(ports, max+1)
-					if err := selectPort(ctx, cli, fmt.Sprintf("%d", max+1), podName, containerPort, ports); err != nil {
+					if err := s.saveUsedPort(ports); err != nil {
 						logrus.Errorf("get port map error select port .%s", err.Error())
-						time.Sleep(time.Second * 3)
-						continue
 					}
-					return fmt.Sprintf("%d", max+1)
+					selectport = max + 1
 				}
 				wantselect := minport
 				for _, used := range ports {
 					if used-wantselect > 0 {
-						if err := selectPort(ctx, cli, fmt.Sprintf("%d", wantselect), podName, containerPort, append(ports, wantselect)); err != nil {
+						if err := s.saveUsedPort(append(ports, wantselect)); err != nil {
 							logrus.Errorf("get port map error select port .%s", err.Error())
 							time.Sleep(time.Second * 3)
 							continue
 						} else {
-							return fmt.Sprintf("%d", wantselect)
+							selectport = wantselect
 						}
 					}
 					wantselect = used + 1
@@ -222,56 +313,25 @@ func GetHostPortMap(containerPort string, podName string) string {
 			}
 		}
 	}
-	logrus.Errorf("can not select a map port for pod %s port %s", podName, containerPort)
-	return "0"
+	return selectport
 }
 
-//ReleaseHostPort 释放POD 使用的端口
-func ReleaseHostPort(podName string, lock bool) {
-	if lock {
-		getHostPortLock.Lock()
-		defer getHostPortLock.Unlock()
-	}
-	logrus.Infof("start release host port for pod %s", podName)
+//ReleaseHostPort 释放端口
+func (s *HostPortStore) ReleaseHostPort(releasePorts ...int) {
+	s.getHostPortLock.Lock()
+	defer s.getHostPortLock.Unlock()
 	for i := 0; i < 3; i++ {
-		cli, err := clientv3.New(clientv3.Config{
-			Endpoints:   etcdV3Endpoints,
-			DialTimeout: 10 * time.Second,
-		})
-		if err != nil {
-			logrus.Errorf("release host port error.%s", err.Error())
-			time.Sleep(time.Second * 3)
-			continue
-		}
-		defer cli.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		ctx, cancel := context.WithTimeout(s.ctx, time.Second*10)
 		defer cancel()
-		res, err := cli.Get(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix())
-		if err != nil {
-			logrus.Error("get pod host port map info error.", err.Error())
-			time.Sleep(3 * time.Second)
-			continue
-		}
-		if res.Count == 0 {
-			return
-		}
-		var releasePort []int
-		for _, kv := range res.Kvs {
-			logrus.Info(string(kv.Key))
-			port, err := strconv.Atoi(string(kv.Value))
-			if err == nil {
-				releasePort = append(releasePort, port)
-			}
-		}
-		if len(releasePort) > 0 {
-			res, err := cli.Get(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()))
+		if len(releasePorts) > 0 {
+			res, err := s.cli.Get(ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()))
 			if err != nil {
 				logrus.Error("delete pod port map info error.", err.Error())
 				time.Sleep(time.Second * 3)
 				continue
 			}
 			for _, kv := range res.Kvs {
-				if string(kv.Key) == fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()) {
+				if string(kv.Key) == fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()) {
 					var ports []int
 					err = json.Unmarshal(kv.Value, &ports)
 					if err != nil {
@@ -280,8 +340,7 @@ func ReleaseHostPort(podName string, lock bool) {
 						continue
 					}
 					sort.Ints(ports)
-					for _, rep := range releasePort {
-						logrus.Info(ports)
+					for _, rep := range releasePorts {
 						for i := range ports {
 							if ports[i] == rep {
 								ports = append(ports[:i], ports[i+1:]...)
@@ -297,7 +356,7 @@ func ReleaseHostPort(podName string, lock bool) {
 						logrus.Error("release port marshal error.", err.Error())
 						continue
 					}
-					_, err = cli.Put(ctx, fmt.Sprintf("/store/host/%s/usedport", ReadHostUUID()), string(su))
+					_, err = s.cli.Put(ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()), string(su))
 					if err != nil {
 						logrus.Error("release port put used port info error.", err.Error())
 						continue
@@ -305,28 +364,51 @@ func ReleaseHostPort(podName string, lock bool) {
 				}
 			}
 		}
-		if _, err := cli.Delete(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix()); err != nil {
-			logrus.Error("delete pod port map info error.", err.Error())
-		}
 		break
 	}
 }
 
-func selectPort(ctx context.Context, cli *clientv3.Client, selectPort, podName, containerPort string, ports []int) error {
-	su, err := json.Marshal(ports)
+//ReleaseHostPortByPod 释放POD端口
+func (s *HostPortStore) ReleaseHostPortByPod(podName string) {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*10)
+	defer cancel()
+	res, err := s.cli.Get(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix())
 	if err != nil {
-		return err
+		logrus.Error("get pod host port map info when release port error.", err.Error())
 	}
-	_, err = cli.Put(ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()), string(su))
+	if res.Count == 0 {
+		return
+	}
+	var releasePort []int
+	for _, kv := range res.Kvs {
+		logrus.Info(string(kv.Key))
+		port, err := strconv.Atoi(string(kv.Value))
+		if err == nil {
+			releasePort = append(releasePort, port)
+		}
+	}
+	s.ReleaseHostPort(releasePort...)
+	if _, err := s.cli.Delete(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix()); err != nil {
+		logrus.Error("delete pod port map info error.", err.Error())
+	}
+}
+
+//GetHostPort 获取端口
+func (s *HostPortStore) GetHostPort(containerPort string, podName string) string {
+	ctx, cancel := context.WithTimeout(s.ctx, time.Second*10)
+	defer cancel()
+	res, _ := s.cli.Get(ctx, fmt.Sprintf("/store/pod/%s/outerport/%s/mapport", podName, containerPort))
+	if res.Count != 0 {
+		//释放掉原端口
+		s.ReleaseHostPortByPod(podName)
+	}
+	selectPort := s.Consum()
+	_, err := s.cli.Put(ctx, fmt.Sprintf("/store/pods/%s/ports/%s/mapport", podName, containerPort), fmt.Sprintf("%d", selectPort))
 	if err != nil {
-		return err
+		logrus.Errorf("get a host port for pod %s and save to etcd error", podName)
+		return "0"
 	}
-	_, err = cli.Put(ctx, fmt.Sprintf("/store/pods/%s/ports/%s/mapport", podName, containerPort), selectPort)
-	if err != nil {
-		return err
-	}
-	logrus.Infof("pod %s port %s map host port %s", podName, containerPort, selectPort)
-	return nil
+	return fmt.Sprintf("%d", selectPort)
 }
 
 //HostPortInfo 主机端口
