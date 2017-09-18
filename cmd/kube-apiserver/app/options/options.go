@@ -63,9 +63,6 @@ type ServerRunOptions struct {
 	ServiceNodePortRange      utilnet.PortRange
 	SSHKeyfile                string
 	SSHUser                   string
-
-	LicenseFile string
-	LicenseType string
 }
 
 // NewServerRunOptions creates a new ServerRunOptions object with default parameters
@@ -203,8 +200,5 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 		"If true, server will do its best to fix the update request to pass the validation, "+
 		"e.g., setting empty UID in update request to its existing value. This flag can be turned off "+
 		"after we fix all the clients that send malformed updates.")
-	// License flags:
-	fs.StringVar(&s.LicenseFile, "license-file", "/etc/goodrain/LICENSE", "The license gives help software copyright license")
-	fs.StringVar(&s.LicenseType, "license-type", "online", "license type")
 
 }

@@ -32,7 +32,6 @@ import (
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/v1"
 	apiv1 "k8s.io/kubernetes/pkg/api/v1"
 	appsv1beta1 "k8s.io/kubernetes/pkg/apis/apps/v1beta1"
 	authenticationv1 "k8s.io/kubernetes/pkg/apis/authentication/v1"
@@ -73,7 +72,6 @@ import (
 	rbacrest "k8s.io/kubernetes/pkg/registry/rbac/rest"
 	settingsrest "k8s.io/kubernetes/pkg/registry/settings/rest"
 	storagerest "k8s.io/kubernetes/pkg/registry/storage/rest"
-	"k8s.io/kubernetes/pkg/util/license"
 )
 
 const (
@@ -130,9 +128,6 @@ type Config struct {
 	// Number of masters running; all masters must be started with the
 	// same value for this field. (Numbers > 1 currently untested.)
 	MasterCount int
-	// License config
-	LicenseFile string
-	LicenseType string
 }
 
 // EndpointReconcilerConfig holds the endpoint reconciler and endpoint reconciliation interval to be
@@ -304,197 +299,6 @@ func (m *Master) installTunneler(nodeTunneler tunneler.Tunneler, nodeClient core
 		Name: "apiserver_proxy_tunnel_sync_latency_secs",
 		Help: "The time since the last successful synchronization of the SSH tunnels for proxy requests.",
 	}, func() float64 { return float64(nodeTunneler.SecondsSinceSync()) })
-}
-
-//以下为监测license代码段：
-
-func isReadyNodeInfo(node *v1.Node) bool {
-	for ix := range node.Status.Conditions {
-		condition := &node.Status.Conditions[ix]
-		if condition.Reason == "KubeletReady" {
-			return true
-		}
-	}
-	return false
-}
-
-//CheckLicense licnese信息检测
-func (m *Master) CheckLicense(licenseFile, licenseType string, stopCh <-chan struct{}) {
-	//step1 wait for 10 senconds
-	time.Sleep(10 * time.Second)
-	//step2 start check license
-	tick := time.NewTicker(time.Second * 20)
-	m.doCheck(licenseFile, licenseType)
-	for {
-		select {
-		case <-stopCh:
-			return
-		case <-tick.C:
-
-		}
-		glog.V(2).Info("Start check license info.")
-		m.doCheck(licenseFile, licenseType)
-	}
-}
-
-//ExitAllNode 下线全部节点
-func (m *Master) ExitAllNode() {
-	nodes, err := m.NodeClient.List(metav1.ListOptions{})
-	if err != nil {
-		glog.Errorf("下线节点发生错误。" + err.Error())
-		return
-	}
-	for ix := range nodes.Items {
-		node := &nodes.Items[ix]
-		if isReadyNodeInfo(node) {
-			err := m.excitNode(node.Name)
-			if err != nil {
-				glog.Errorf("下线节点发生错误。" + err.Error())
-			}
-		}
-	}
-}
-
-//ExitMinNode 下线资源最小节点
-func (m *Master) ExitMinNode(tag string) {
-	nodes, err := m.NodeClient.List(metav1.ListOptions{})
-	if err != nil {
-		glog.Errorf("下线节点发生错误。" + err.Error())
-		return
-	}
-	var nodeName string
-	var min int64
-	for ix := range nodes.Items {
-		node := &nodes.Items[ix]
-		if isReadyNodeInfo(node) {
-			if tag == "node" {
-				err := m.excitNode(node.Name)
-				if err != nil {
-					glog.Errorf("下线节点发生错误。" + err.Error())
-				}
-				return
-			}
-			if tag == "cpu" {
-				if ix == 0 {
-					min = node.Status.Capacity.Cpu().Value()
-					nodeName = node.Name
-				} else {
-					if min > node.Status.Capacity.Cpu().Value() {
-						min = node.Status.Capacity.Cpu().Value()
-						nodeName = node.Name
-					}
-				}
-			}
-			if tag == "memory" {
-				if ix == 0 {
-					min = node.Status.Capacity.Memory().Value()
-					nodeName = node.Name
-				} else {
-					if min > node.Status.Capacity.Memory().Value() {
-						min = node.Status.Capacity.Memory().Value()
-						nodeName = node.Name
-					}
-				}
-			}
-		}
-	}
-	err = m.excitNode(nodeName)
-	if err != nil {
-		glog.Errorf("下线节点发生错误。" + err.Error())
-	}
-}
-
-func (m *Master) doCheck(licenseFile, licenseType string) {
-	var LicenseInfo license.Info
-	var err error
-	if licenseType == "online" {
-		LicenseInfo, err = license.ReadLicenseFromConsole("a905b993b5035122abe7be3a5c13ce2e55047981", licenseFile)
-		if err != nil {
-			glog.Error("在线获取LICENSE获取错误,系统退出。如有疑问请联系客服。错误原因:" + err.Error())
-			return
-		}
-	} else {
-		LicenseInfo, err = license.ReadLicenseFromFile(licenseFile)
-		if err != nil {
-			glog.Error("在线获取LICENSE获取错误,系统退出。如有疑问请联系客服。错误原因:" + err.Error())
-			return
-		}
-	}
-	//step1 check time
-	endTime, err := time.Parse("2006-01-02 15:04:05", LicenseInfo.EndTime)
-	if err != nil {
-		glog.Error("解析LICENSE过期时间错误，集群退出.", err.Error())
-		m.ExitAllNode()
-		return
-	}
-
-	if endTime.Before(time.Now()) {
-		glog.Error("LICENSE过期时间已到，集群退出.请联系客服")
-		m.ExitAllNode()
-		return
-	}
-	if time.Now().After(endTime.AddDate(0, -1, 0)) {
-		glog.Errorf("你的LICENSE将于%s过期.为了不影响你的使用，请与我们客服联系。", LicenseInfo.EndTime)
-	}
-	nodesInfo, err := m.getAllNodeInfo()
-	if err != nil || nodesInfo == nil {
-		return
-	}
-	//start check resources
-	glog.V(2).Infof("集群资源情况:内存%dGB,CPU %d核,节点%d个。", nodesInfo["memorys"], nodesInfo["cpus"], nodesInfo["nodes"])
-
-	//step2 check node number
-	if nodesInfo["nodes"] > LicenseInfo.Node {
-		glog.Error("集群节点数量超过授权值，下线节点.请联系客服")
-		m.ExitMinNode("node")
-		return
-	}
-
-	//step3 check memory
-	if nodesInfo["memorys"] > LicenseInfo.Memory {
-		glog.Error("集群内存总数超过授权值，下线节点.请联系客服")
-		m.ExitMinNode("memory")
-		return
-	}
-	//step4 check cpu
-	if nodesInfo["cpus"] > LicenseInfo.CPU {
-		glog.Error("集群CPU核总数超过授权值，下线节点.请联系客服")
-		m.ExitMinNode("cpu")
-		return
-	}
-}
-
-func (m *Master) getAllNodeInfo() (map[string]int64, error) {
-	nodes, err := m.NodeClient.List(metav1.ListOptions{})
-	if err != nil {
-		glog.Error("list all node info error.", err.Error())
-		return nil, err
-	}
-	nodeMap := make(map[string]int64)
-	var memory, readyNodes, cpu int64
-	for ix := range nodes.Items {
-		node := &nodes.Items[ix]
-		if isReadyNodeInfo(node) {
-			readyNodes++
-			cpu += node.Status.Capacity.Cpu().Value()
-			memory += node.Status.Capacity.Memory().Value()
-		}
-	}
-	//集群总cpu核数
-	nodeMap["cpus"] = cpu
-	//集群总内存数（b->GB）
-	nodeMap["memorys"] = memory / 1024 / 1024 / 1024
-	//集群ready的节点数
-	nodeMap["nodes"] = readyNodes
-	return nodeMap, nil
-}
-
-func (m *Master) excitNode(nodeName string) error {
-	err := m.NodeClient.Delete(nodeName, &metav1.DeleteOptions{})
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 // RESTStorageProvider is a factory type for REST storage.

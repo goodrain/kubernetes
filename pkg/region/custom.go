@@ -77,7 +77,6 @@ func GetCustom() *Custom {
 }
 func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 	ParseConfig(customFile)
-	go c.discoverEventServer()
 	if kubelet {
 		c.hostPortStore, err = GetHostPortStore()
 		if err != nil {
@@ -87,7 +86,11 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 	}
 	go func() {
 		// Use interrupt handler to make sure the server to be stopped properly.
-		interrupt.New(nil, c.Stop)
+		handle := interrupt.New(nil, c.Stop)
+		handle.Run(func() error {
+			c.discoverEventServer()
+			return nil
+		})
 	}()
 	return nil
 }

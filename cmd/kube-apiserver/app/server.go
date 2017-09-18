@@ -108,7 +108,6 @@ func RunServer(config *master.Config, sharedInformers informers.SharedInformerFa
 	if err != nil {
 		return err
 	}
-	go m.CheckLicense(config.LicenseFile, config.LicenseType, stopCh)
 	sharedInformers.Start(stopCh)
 	return m.GenericAPIServer.PrepareRun().Run(stopCh)
 }
@@ -389,8 +388,6 @@ func BuildMasterConfig(s *options.ServerRunOptions) (*master.Config, informers.S
 		return nil, nil, err
 	}
 	config := &master.Config{
-		LicenseFile:   s.LicenseFile,
-		LicenseType:   s.LicenseType,
 		GenericConfig: genericConfig,
 
 		ClientCARegistrationHook: master.ClientCARegistrationHook{
