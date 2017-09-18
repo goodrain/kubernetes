@@ -64,8 +64,13 @@ func (m *kubeGenericRuntimeManager) createPodSandbox(pod *v1.Pod, attempt uint32
 					var err error
 					exteriorPort, err = strconv.Atoi(portNumber)
 					if err != nil {
+						region.EventLog(pod, "应用分配负载均衡端口错误", "error")
 						exteriorPort = 0
+					} else {
+						region.EventLog(pod, fmt.Sprintf("应用分配负载均衡端口成功(%d->%d)", port.ContainerPort, exteriorPort), "info")
 					}
+				} else {
+					region.EventLog(pod, "应用分配负载均衡端口错误", "error")
 				}
 			}
 			port.HostPort = int32(exteriorPort)

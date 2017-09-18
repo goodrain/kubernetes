@@ -36,6 +36,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/api/v1"
 
 	"sync"
@@ -89,19 +90,13 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 	return nil
 }
 func (c *Custom) discoverEventServer() {
-	tike := time.Tick(time.Minute * 2)
-	logrus.Info("start discover event server endpoints")
-	for {
+	go wait.Until(func() {
+		logrus.Info("start discover event server endpoints")
 		servers := GetEventLogInstance()
 		if servers != nil && len(servers) > 0 {
 			eventLogServers = servers
 		}
-		select {
-		case <-tike:
-		case <-c.ctx.Done():
-			return
-		}
-	}
+	}, time.Minute*2, c.ctx.Done())
 }
 
 func (c *Custom) Stop() {
@@ -263,9 +258,7 @@ func (s *HostPortStore) Sync() {
 		return
 	}
 	var realUsedPort []int
-	logrus.Info(res.Count)
 	for _, kv := range res.Kvs {
-		logrus.Info(string(kv.Key))
 		port, err := strconv.Atoi(string(kv.Value))
 		if err == nil {
 			realUsedPort = append(realUsedPort, port)
@@ -414,6 +407,7 @@ func (s *HostPortStore) ReleaseHostPort(releasePorts ...int) {
 
 //ReleaseHostPortByPod 释放POD端口
 func (s *HostPortStore) ReleaseHostPortByPod(podName string) {
+	logrus.Infof("start release host port for pod %s", podName)
 	ctx, cancel := context.WithTimeout(s.ctx, time.Second*10)
 	defer cancel()
 	res, err := s.cli.Get(ctx, fmt.Sprintf("/store/pods/%s/ports", podName), clientv3.WithPrefix())
@@ -450,8 +444,9 @@ func (s *HostPortStore) GetHostPort(containerPort string, podName string) string
 	_, err := s.cli.Put(ctx, fmt.Sprintf("/store/pods/%s/ports/%s/mapport", podName, containerPort), fmt.Sprintf("%d", selectPort))
 	if err != nil {
 		logrus.Errorf("get a host port for pod %s and save to etcd error", podName)
-		return "0"
+		return ""
 	}
+	logrus.Infof("select host port (%d) for pod %s", selectPort, podName)
 	return fmt.Sprintf("%d", selectPort)
 }
 
