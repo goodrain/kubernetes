@@ -263,6 +263,7 @@ func (s *HostPortStore) Sync() {
 		return
 	}
 	var realUsedPort []int
+	logrus.Info(res.Count)
 	for _, kv := range res.Kvs {
 		logrus.Info(string(kv.Key))
 		port, err := strconv.Atoi(string(kv.Value))
@@ -270,7 +271,22 @@ func (s *HostPortStore) Sync() {
 			realUsedPort = append(realUsedPort, port)
 		}
 	}
+	sort.Ints(realUsedPort)
+	UniqueSlice(&realUsedPort)
 	s.saveUsedPort(realUsedPort)
+}
+
+func UniqueSlice(slice *[]int) {
+	found := make(map[int]bool)
+	total := 0
+	for i, val := range *slice {
+		if _, ok := found[val]; !ok {
+			found[val] = true
+			(*slice)[total] = (*slice)[i]
+			total++
+		}
+	}
+	*slice = (*slice)[:total]
 }
 
 //Produced 生产port
@@ -354,7 +370,7 @@ func (s *HostPortStore) ReleaseHostPort(releasePorts ...int) {
 		if len(releasePorts) > 0 {
 			res, err := s.cli.Get(ctx, fmt.Sprintf("/store/hosts/%s/usedport", ReadHostUUID()))
 			if err != nil {
-				logrus.Error("delete pod port map info error.", err.Error())
+				logrus.Error("get used port info error when release host port.", err.Error())
 				time.Sleep(time.Second * 3)
 				continue
 			}

@@ -44,3 +44,11 @@ func TestReleaseHostPort(t *testing.T) {
 	}
 	store.ReleaseHostPortByPod("xxx-46")
 }
+
+func TestSync(t *testing.T) {
+	_, err := GetHostPortStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	//store.Sync()
+}
