@@ -21,8 +21,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-
-	"github.com/golang/glog"
 )
 
 // terminationSignals are signals that cause the program to exit in the
@@ -78,8 +76,7 @@ func (h *Handler) Signal(s os.Signal) {
 			fn()
 		}
 		if h.final == nil {
-			glog.Errorf("Signal exist")
-			//os.Exit(1)
+			os.Exit(1)
 		} else {
 			h.final(s)
 		}
