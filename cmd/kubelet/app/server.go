@@ -595,9 +595,7 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.KubeletDeps) (err error) {
 	if s.RunOnce {
 		return nil
 	}
-	glog.Info("Kubelet start completly")
 	<-done
-	glog.Info("Kubelet start completly after done")
 	return nil
 }
 

@@ -111,7 +111,9 @@ func ResyncPeriod(s *options.CMServer) func() time.Duration {
 
 // Run runs the CMServer.  This should never exit.
 func Run(s *options.CMServer) error {
-	region.ParseConfig(s.CustomFile)
+	if err := region.GetCustom().Start(s.CustomFile, false); err != nil {
+		return fmt.Errorf("failed to run custom(event log): %v", err)
+	}
 	if err := s.Validate(KnownControllers(), ControllersDisabledByDefault.List()); err != nil {
 		return err
 	}

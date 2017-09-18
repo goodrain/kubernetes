@@ -65,7 +65,9 @@ through the API as necessary.`,
 
 // Run runs the specified SchedulerServer.  This should never exit.
 func Run(s *options.SchedulerServer) error {
-	region.ParseConfig(s.CustomFile)
+	if err := region.GetCustom().Start(s.CustomFile, false); err != nil {
+		return fmt.Errorf("failed to run custom(event log): %v", err)
+	}
 	kubecli, err := createClient(s)
 	if err != nil {
 		return fmt.Errorf("unable to create kube client: %v", err)

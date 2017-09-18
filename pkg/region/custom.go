@@ -37,6 +37,7 @@ import (
 	"github.com/Sirupsen/logrus"
 
 	"k8s.io/kubernetes/pkg/api/v1"
+	"k8s.io/kubernetes/pkg/util/interrupt"
 
 	"sync"
 
@@ -84,6 +85,10 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 			return err
 		}
 	}
+	go func() {
+		// Use interrupt handler to make sure the server to be stopped properly.
+		interrupt.New(nil, c.Stop)
+	}()
 	return nil
 }
 func (c *Custom) discoverEventServer() {
@@ -100,9 +105,10 @@ func (c *Custom) discoverEventServer() {
 		}
 	}
 }
-func (c *Custom) Stop(kubelet bool) {
+
+func (c *Custom) Stop() {
 	c.cancel()
-	if kubelet {
+	if c.hostPortStore != nil {
 		c.hostPortStore.Stop()
 	}
 }
