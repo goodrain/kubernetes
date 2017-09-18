@@ -111,6 +111,7 @@ func (c *Custom) Stop() {
 	if c.hostPortStore != nil {
 		c.hostPortStore.Stop()
 	}
+	logrus.Info("Custom manager Stoped")
 }
 
 //ParseConfig 解析配置文件
