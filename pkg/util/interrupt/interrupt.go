@@ -80,8 +80,9 @@ func (h *Handler) Signal(s os.Signal) {
 		if h.final == nil {
 			glog.Errorf("Signal exist")
 			//os.Exit(1)
+		} else {
+			h.final(s)
 		}
-		h.final(s)
 	})
 }
 
