@@ -87,15 +87,19 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 	go func() {
 		// Use interrupt handler to make sure the server to be stopped properly.
 		handle := interrupt.New(nil, c.Stop)
-		handle.Run(func() error {
+		err := handle.Run(func() error {
 			c.discoverEventServer()
 			return nil
 		})
+		if err != nil {
+			logrus.Error("interrupt run discover event server endoints error.", err.Error())
+		}
 	}()
 	return nil
 }
 func (c *Custom) discoverEventServer() {
-	tike := time.Tick(time.Minute * 5)
+	tike := time.Tick(time.Minute * 2)
+	logrus.Info("start discover event server endpoints")
 	for {
 		servers := GetEventLogInstance()
 		if servers != nil && len(servers) > 0 {
