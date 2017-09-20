@@ -17,6 +17,8 @@ limitations under the License.
 package region
 
 import (
+	"acp_core/pkg/discover"
+	"acp_core/pkg/discover/config"
 	"bufio"
 	"bytes"
 	"context"
@@ -32,13 +34,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-
 	"github.com/golang/glog"
 
 	"github.com/Sirupsen/logrus"
 
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/kubernetes/pkg/api/v1"
 
 	"sync"
@@ -68,6 +67,7 @@ type Custom struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	hostPortStore *HostPortStore
+	dis           discover.Discover
 }
 
 func GetCustom() *Custom {
@@ -86,25 +86,43 @@ func (c *Custom) Start(customFile string, kubelet bool) (err error) {
 			return err
 		}
 	}
-	go func() {
-		c.discoverEventServer()
-	}()
+	c.discoverEventServer()
 	return nil
 }
 func (c *Custom) discoverEventServer() {
-	go wait.Until(func() {
-		logrus.Info("start discover event server endpoints")
-		servers := GetEventLogInstance()
-		if servers != nil && len(servers) > 0 {
-			eventLogServers = servers
+	discover, err := discover.GetDiscover(config.DiscoverConfig{
+		EtcdClusterEndpoints: etcdV3Endpoints,
+	})
+	if err != nil {
+		logrus.Error("create discover manager error.", err.Error())
+	}
+	discover.AddProject("event_log_event_grpc", c)
+	c.dis = discover
+}
+
+//UpdateEndpoints 更新eventserver地址
+func (c *Custom) UpdateEndpoints(endpoints ...*config.Endpoint) {
+	var servers []string
+	for _, e := range endpoints {
+		if e.URL != "" {
+			servers = append(servers, e.URL)
 		}
-	}, time.Minute*2, c.ctx.Done())
+	}
+	eventLogServers = servers
+}
+
+//when watch occurred error,will exec this method
+func (c *Custom) Error(err error) {
+	logrus.Error("discover event log server error.", err.Error())
 }
 
 func (c *Custom) Stop() {
 	c.cancel()
 	if c.hostPortStore != nil {
 		c.hostPortStore.Stop()
+	}
+	if c.dis != nil {
+		c.dis.Stop()
 	}
 	logrus.Info("Custom manager Stoped")
 }
@@ -488,35 +506,6 @@ func ReadHostUUID() string {
 	return result
 }
 
-func parseJSON(body []byte) map[string]string {
-	j2 := make(map[string]interface{})
-	json.Unmarshal(body, &j2)
-	dataMap := map[string]string{}
-	for k, v := range j2 {
-		switch vv := v.(type) {
-		case string:
-			dataMap[k] = vv
-		case int:
-			dataMap[k] = strconv.Itoa(vv)
-		case int8:
-			dataMap[k] = strconv.Itoa(int(vv))
-		case int16:
-			dataMap[k] = strconv.Itoa(int(vv))
-		case int32:
-			dataMap[k] = strconv.Itoa(int(vv))
-		case int64:
-			dataMap[k] = strconv.Itoa(int(vv))
-		case float32:
-			dataMap[k] = strconv.Itoa(int(vv))
-		case float64:
-			dataMap[k] = strconv.Itoa(int(vv))
-		default:
-			fmt.Println("default=", vv)
-		}
-	}
-	return dataMap
-}
-
 //GetEventID 获取操作ID 从环境变量
 func GetEventID(pod *v1.Pod) string {
 	if len(pod.Spec.Containers) > 0 {
@@ -561,35 +550,4 @@ func EventLog(pod *v1.Pod, message, level string) {
 		}
 		continue
 	}
-}
-
-//GetEventLogInstance 获取EventLogInstance
-func GetEventLogInstance() []string {
-	var clusterAddress []string
-	res, err := http.DefaultClient.Get(fmt.Sprintf("%s/v2/keys/event/instance", etcdV2Endpoints[0]))
-	if err != nil {
-		logrus.Errorf("Error get docker log instance from etcd: %v", err)
-		return nil
-	}
-	if res != nil && res.Body != nil {
-		defer res.Body.Close()
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		logrus.Error("read get instance body data error. ", err.Error())
-		return nil
-	}
-	nodes := gjson.GetBytes(body, "node.nodes").Array()
-	if nodes != nil {
-		for _, node := range nodes {
-			if value, ok := node.Map()["value"]; ok {
-				hostIP := gjson.Get(value.String(), "HostIP").String()
-				webPort := gjson.Get(value.String(), "WebPort").Int()
-				if hostIP != "" && webPort != 0 {
-					clusterAddress = append(clusterAddress, fmt.Sprintf("http://%s:%d", hostIP, webPort))
-				}
-			}
-		}
-	}
-	return clusterAddress
 }
