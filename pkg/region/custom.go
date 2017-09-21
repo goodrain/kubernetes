@@ -96,7 +96,7 @@ func (c *Custom) discoverEventServer() {
 	if err != nil {
 		logrus.Error("create discover manager error.", err.Error())
 	}
-	discover.AddProject("event_log_event_grpc", c)
+	discover.AddProject("event_log_event_http", c)
 	c.dis = discover
 }
 
