@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/v1"
+	"k8s.io/kubernetes/pkg/region"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/metrics"
@@ -152,23 +153,32 @@ func (s *Scheduler) scheduleOne() {
 		glog.V(3).Infof("Skip schedule deleting pod: %v/%v", pod.Namespace, pod.Name)
 		return
 	}
-
+	//goodrain change:support simple local scheduler
 	glog.V(3).Infof("Attempting to schedule pod: %v/%v", pod.Namespace, pod.Name)
 	start := time.Now()
-	dest, err := s.config.Algorithm.Schedule(pod, s.config.NodeLister)
-	if err != nil {
-		glog.V(1).Infof("Failed to schedule pod: %v/%v", pod.Namespace, pod.Name)
-		s.config.Error(pod, err)
-		s.config.Recorder.Eventf(pod, v1.EventTypeWarning, "FailedScheduling", "%v", err)
-		s.config.PodConditionUpdater.Update(pod, &v1.PodCondition{
-			Type:    v1.PodScheduled,
-			Status:  v1.ConditionFalse,
-			Reason:  v1.PodReasonUnschedulable,
-			Message: err.Error(),
-		})
-		return
+	var dest string
+	is, ok := pod.Labels["local-scheduler"]
+	host, okHost := pod.Labels["scheduler-host"]
+	if ok && is == "true" && okHost {
+		region.EventLog(pod, "应用基于本地调度到机器:"+host, "info")
+		dest = host
+	} else {
+		var err error
+		dest, err = s.config.Algorithm.Schedule(pod, s.config.NodeLister)
+		if err != nil {
+			glog.V(1).Infof("Failed to schedule pod: %v/%v", pod.Namespace, pod.Name)
+			s.config.Error(pod, err)
+			s.config.Recorder.Eventf(pod, v1.EventTypeWarning, "FailedScheduling", "%v", err)
+			s.config.PodConditionUpdater.Update(pod, &v1.PodCondition{
+				Type:    v1.PodScheduled,
+				Status:  v1.ConditionFalse,
+				Reason:  v1.PodReasonUnschedulable,
+				Message: err.Error(),
+			})
+			return
+		}
+		metrics.SchedulingAlgorithmLatency.Observe(metrics.SinceInMicroseconds(start))
 	}
-	metrics.SchedulingAlgorithmLatency.Observe(metrics.SinceInMicroseconds(start))
 
 	// Optimistically assume that the binding will succeed and send it to apiserver
 	// in the background.
