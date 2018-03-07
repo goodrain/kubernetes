@@ -816,7 +816,7 @@ func (m *kubeGenericRuntimeManager) killPodWithSyncResult(pod *v1.Pod, runningPo
 	portStore, err := region.GetHostPortStore()
 	if err != nil || portStore == nil {
 		glog.Error("Get host port store error.", err.Error())
-	} else {
+	} else if pod != nil {
 		portStore.ReleaseHostPortByPod(pod.Name)
 	}
 
