@@ -267,7 +267,7 @@ func (lb *LoadBalancerRR) OnEndpointsUpdate(allEndpoints []api.Endpoints) {
 					portsToEndpoints[port.Name] = append(portsToEndpoints[port.Name], hostPortPair{addr.IP, int(port.Port)})
 					// Ignore the protocol field - we'll get that from the Service objects.
 				}
-				if value, ok := svcEndpoints.Annotations["rainbond.com/tolerate-unready-endpoints"]; ok && value == "true" {
+				if value, ok := svcEndpoints.Labels["rainbond.com/tolerate-unready-endpoints"]; ok && value == "true" {
 					for i := range ss.NotReadyAddresses {
 						addr := &ss.NotReadyAddresses[i]
 						portsToEndpoints[port.Name] = append(portsToEndpoints[port.Name], hostPortPair{addr.IP, int(port.Port)})
