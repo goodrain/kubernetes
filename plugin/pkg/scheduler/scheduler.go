@@ -159,10 +159,15 @@ func (s *Scheduler) scheduleOne() {
 	var dest string
 	is, ok := pod.Labels["local-scheduler"]
 	host, okHost := pod.Labels["scheduler-host"]
+	var defaultscheduler = true
 	if ok && is == "true" && okHost {
-		region.EventLog(pod, "应用基于本地调度到机器:"+host, "info")
-		dest = host
-	} else {
+		region.EventLog(pod, "Pod fixed scheduling to node:"+host, "info")
+		dest = getNodeNameByIP(host, s.config.NodeLister)
+		if dest != "" {
+			defaultscheduler = false
+		}
+	}
+	if defaultscheduler {
 		var err error
 		dest, err = s.config.Algorithm.Schedule(pod, s.config.NodeLister)
 		if err != nil {
@@ -232,4 +237,19 @@ func (s *Scheduler) scheduleOne() {
 		metrics.BindingLatency.Observe(metrics.SinceInMicroseconds(bindingStart))
 		s.config.Recorder.Eventf(pod, v1.EventTypeNormal, "Scheduled", "Successfully assigned %v to %v", pod.Name, dest)
 	}()
+}
+
+func getNodeNameByIP(nodeIP string, nodeLister algorithm.NodeLister) string {
+	nodes, err := nodeLister.List()
+	if err != nil {
+		return ""
+	}
+	for _, n := range nodes {
+		for _, address := range n.Status.Addresses {
+			if address.Address == nodeIP && address.Type == v1.NodeInternalIP {
+				return n.Name
+			}
+		}
+	}
+	return ""
 }
