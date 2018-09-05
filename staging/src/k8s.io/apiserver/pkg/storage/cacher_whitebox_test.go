@@ -25,6 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/pkg/api"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"strconv"
+	"fmt"
 )
 
 // verifies the cacheWatcher.process goroutine is properly cleaned up even if
@@ -44,7 +48,7 @@ func TestCacheWatcherCleanupNotBlockedByResult(t *testing.T) {
 	}
 	// set the size of the buffer of w.result to 0, so that the writes to
 	// w.result is blocked.
-	w := newCacheWatcher(api.Scheme, 0, 0, initEvents, filter, forget)
+	w := newCacheWatcher(api.Scheme, 0, 0, initEvents, filter, forget, testVersioner{})
 	w.Stop()
 	if err := wait.PollImmediate(1*time.Second, 5*time.Second, func() (bool, error) {
 		lock.RLock()
@@ -53,4 +57,22 @@ func TestCacheWatcherCleanupNotBlockedByResult(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("expected forget() to be called twice, because sendWatchCacheEvent should not be blocked by the result channel: %v", err)
 	}
+}
+
+type testVersioner struct{}
+
+func (testVersioner) UpdateObject(obj runtime.Object, resourceVersion uint64) error {
+	return meta.NewAccessor().SetResourceVersion(obj, strconv.FormatUint(resourceVersion, 10))
+}
+func (testVersioner) UpdateList(obj runtime.Object, resourceVersion uint64) error {
+	return fmt.Errorf("unimplemented")
+}
+func (testVersioner) CompareResourceVersion(lhs, rhs runtime.Object) error {
+	return fmt.Errorf("unimplemented")
+}
+func (testVersioner) ObjectResourceVersion(obj runtime.Object) (uint64, error) {
+	return 0, fmt.Errorf("unimplemented")
+}
+func (testVersioner) ParseResourceVersion(resourceVersion string) (uint64, error) {
+	return strconv.ParseUint(resourceVersion, 10, 64)
 }
