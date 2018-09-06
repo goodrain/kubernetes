@@ -139,6 +139,12 @@ func makeMounts(pod *v1.Pod, podDir string, container *v1.Container, hostName, h
 			mount.SubPath = pod.Name
 		}
 		if mount.SubPath != "" {
+			if subPathExists, err := util.FileExists(hostPath); err == nil && !subPathExists {
+				if err := os.MkdirAll(hostPath, 0777); err != nil {
+					glog.Errorf("failed to mkdir:%s", hostPath)
+					return nil, err
+				}
+			}
 			fileinfo, err := os.Lstat(hostPath)
 			if err != nil {
 				return nil, err
