@@ -172,6 +172,10 @@ func makeMounts(pod *v1.Pod, podDir string, container *v1.Container, hostName, h
 				}
 			}
 		}
+		//set hostpath perm must be 0777
+		if err := os.Chmod(hostPath, 0777); err != nil {
+			return nil, err
+		}
 
 		// Docker Volume Mounts fail on Windows if it is not of the form C:/
 		containerPath := mount.MountPath
