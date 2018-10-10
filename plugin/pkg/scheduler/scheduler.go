@@ -158,7 +158,7 @@ func (s *Scheduler) scheduleOne() {
 	start := time.Now()
 	var dest string
 	is, ok := pod.Labels["local-scheduler"]
-	host, okHost := pod.Labels["scheduler-host"]
+	host, okHost := pod.Labels["scheduler-host-"+pod.Name]
 	var defaultscheduler = true
 	if ok && is == "true" && okHost {
 		region.EventLog(pod, "Pod fixed scheduling to node:"+host, "info")
